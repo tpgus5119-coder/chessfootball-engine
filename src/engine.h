@@ -3,6 +3,7 @@
 // 유일한 규칙 출처는 docs/spec.md와 GDScript 원본이다 — 이 파일은 속도용 거울이며,
 // tests/test_native_parity.gd가 "같은 상태 + 같은 액션 = 같은 결과·같은 열거 순서"를 보증한다.
 // 결정론 계약: GDScript Dictionary의 삽입 순서(BFS 발견 순서)와 열거 순서를 그대로 재현한다.
+#include <cstdlib>
 #include <vector>
 
 namespace cf {
