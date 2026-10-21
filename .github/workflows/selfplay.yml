@@ -11,6 +11,8 @@ on:
       sims:
         description: "탐색 횟수"
         default: "96"
+permissions:
+  contents: write   # bundle 작업이 release 자산을 올린다
 jobs:
   gen:
     runs-on: ubuntu-latest
@@ -58,5 +60,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view recs >/dev/null 2>&1 || gh release create recs -t recs -n "자가대전 기보 묶음 (맥이 받아 가면 지운다)"
-          gh release upload recs recs-${{ github.run_id }}.bin.xz --clobber
+          R=${{ github.repository }}   # checkout 없는 작업이라 저장소를 직접 준다
+          gh release view recs -R $R >/dev/null 2>&1 || gh release create recs -R $R -t recs -n "자가대전 기보 묶음 (맥이 받아 가면 지운다)"
+          gh release upload recs recs-${{ github.run_id }}.bin.xz -R $R --clobber
