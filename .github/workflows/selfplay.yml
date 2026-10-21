@@ -1,0 +1,42 @@
+name: selfplay
+# 알파제로 자가대전 기보 공장 — 20개 작업이 동시에 돈다. 챔피언 망은 release "champion"의 champion.bin.
+# 결과 기보는 artifact로 올라가고, 학습하는 맥이 tools/az/gh_pull.py로 받아 간다
+on:
+  workflow_dispatch:
+    inputs:
+      games:
+        description: "프로세스당 판수"
+        default: "60"
+      sims:
+        description: "탐색 횟수"
+        default: "96"
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        k: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: c++ -O3 -std=c++17 -march=native tools/gen.cpp src/engine.cpp src/nnue.cpp src/az.cpp -o gen
+      - name: champion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download champion -p champion.bin -D . || echo "no champion yet"
+      - name: selfplay
+        run: |
+          NET=champion.bin; [ -f "$NET" ] || NET=-
+          N=$(nproc)
+          for i in $(seq 0 $((N-1))); do
+            ./gen "rec_${{ matrix.k }}_$i.bin" "${{ github.event.inputs.games }}" "${{ github.event.inputs.sims }}" "$(( ${{ github.run_number }} * 10000 + ${{ matrix.k }} * 100 + i ))" "$NET" 12 0.7 &
+          done
+          wait
+          ls -la rec_*.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recs-${{ github.run_id }}-${{ matrix.k }}
+          path: rec_*.bin
+          retention-days: 2

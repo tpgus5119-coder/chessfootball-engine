@@ -1,0 +1,543 @@
+#include "az.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+
+namespace cf {
+namespace az {
+
+// 첫 세대(망 없음)의 가치 = 지금 게임의 선형 평가 (ai/eval.gd DEFAULT 가중치 — tools/nn/common.h LIN_W와 같다)
+static const double LIN_W[6] = { 0.20, 0.30, 0.60, 0.15, 0.50, 0.05 };
+
+static inline int flip_tile(V2 t, int team) {
+	return t.y * W + (team == AWAY ? W - 1 - t.x : t.x);
+}
+
+int action_index(const State &s, const Action &a) {
+	const int team = s.turn_team;
+	const int opp = opponent(team);
+	switch (a.t) {
+		case A_MOVE:
+		case A_DRIBBLE:
+		case A_PASS:
+		case A_SHOT: {
+			int kind = a.t == A_MOVE ? 0 : a.t == A_DRIBBLE ? 1 : a.t == A_PASS ? 2 : 3;
+			int me = a.uid - PER_TEAM * team;
+			if (me < 0 || me >= PER_TEAM || !in_bounds(a.dest))
+				return -1;
+			return OFF_TILE + (kind * PER_TEAM + me) * NT + flip_tile(a.dest, team);
+		}
+		case A_TACKLE:
+		case A_PUSH:
+		case A_MARK: {
+			int kind = a.t == A_TACKLE ? 0 : a.t == A_PUSH ? 1 : 2;
+			int me = a.uid - PER_TEAM * team;
+			int tg = a.dest.x - PER_TEAM * opp;
+			if (me < 0 || me >= PER_TEAM || tg < 0 || tg >= PER_TEAM)
+				return -1;
+			return OFF_TGT + (kind * PER_TEAM + me) * PER_TEAM + tg;
+		}
+		case A_STANCE: {
+			int me = a.uid - PER_TEAM * team;
+			return me < 0 || me >= PER_TEAM ? -1 : OFF_STANCE + me;
+		}
+		case A_PLACE: {
+			if (a.uid < 0 || a.uid >= NN_NPOS || !in_bounds(a.dest))
+				return -1;
+			return OFF_PLACE + a.uid * NT + flip_tile(a.dest, team);
+		}
+		case A_SUB: {
+			int who = a.uid == -1 ? 0 : 1 + (a.uid - PER_TEAM * team);
+			int slot = a.uid == -1 ? 0 : a.dest.x;
+			if (who < 0 || who > PER_TEAM || slot < 0 || slot >= NN_NPOS)
+				return -1;
+			return OFF_SUB + who * NN_NPOS + slot;
+		}
+	}
+	return -1;
+}
+
+// ---------- 망 ----------
+constexpr int MAGIC = 0x415A4643; // "CFZA"
+
+bool Net::load(const char *path) {
+	FILE *f = fopen(path, "rb");
+	if (!f)
+		return false;
+	std::vector<unsigned char> buf;
+	unsigned char tmp[65536];
+	size_t k;
+	while ((k = fread(tmp, 1, sizeof(tmp), f)) > 0)
+		buf.insert(buf.end(), tmp, tmp + k);
+	fclose(f);
+	return load_mem(buf.data(), buf.size());
+}
+
+bool Net::load_mem(const unsigned char *p, size_t n) {
+	size_t at = 0;
+	auto take = [&](void *dst, size_t bytes) {
+		if (at + bytes > n)
+			return false;
+		std::memcpy(dst, p + at, bytes);
+		at += bytes;
+		return true;
+	};
+	int head[7];
+	if (!take(head, sizeof(head)) || head[0] != MAGIC || head[1] != 1 || head[2] != NN_SPARSE || head[3] != NN_DENSE ||
+			head[4] <= 0 || head[4] > 2048 || head[5] <= 0 || head[5] > 512 || head[6] != NA)
+		return false;
+	h1 = head[4];
+	h2 = head[5];
+	w1.resize(size_t(NN_SPARSE + NN_DENSE) * h1);
+	b1.resize(h1);
+	w2.resize(size_t(h1) * h2);
+	b2.resize(h2);
+	wv.resize(h2);
+	wa.resize(h2);
+	wp.resize(size_t(h2) * NA);
+	bp.resize(NA);
+	bool ok = take(w1.data(), 4 * w1.size()) && take(b1.data(), 4 * b1.size()) && take(w2.data(), 4 * w2.size()) &&
+			take(b2.data(), 4 * b2.size()) && take(wv.data(), 4 * wv.size()) && take(&bv, 4) &&
+			take(wa.data(), 4 * wa.size()) && take(&ba, 4) && take(wp.data(), 4 * wp.size()) &&
+			take(bp.data(), 4 * bp.size());
+	if (!ok)
+		h1 = h2 = 0;
+	return ok;
+}
+
+static void forward(const Net &net, const NetInput &in, std::vector<float> &b) {
+	static thread_local std::vector<float> a;
+	a.assign(net.b1.begin(), net.b1.end());
+	const int h1 = net.h1;
+	for (int i = 0; i < in.n; i++) {
+		const float *row = &net.w1[size_t(in.idx[i]) * h1];
+		for (int j = 0; j < h1; j++)
+			a[j] += row[j];
+	}
+	for (int k = 0; k < NN_DENSE; k++) {
+		float v = in.dense[k];
+		if (v == 0.0f)
+			continue;
+		const float *row = &net.w1[size_t(NN_SPARSE + k) * h1];
+		for (int j = 0; j < h1; j++)
+			a[j] += v * row[j];
+	}
+	for (int j = 0; j < h1; j++)
+		a[j] = std::min(std::max(a[j], 0.0f), 1.0f);
+	b.assign(net.b2.begin(), net.b2.end());
+	const int h2 = net.h2;
+	for (int j = 0; j < h1; j++) {
+		float v = a[j];
+		if (v == 0.0f)
+			continue;
+		const float *row = &net.w2[size_t(j) * h2];
+		for (int k = 0; k < h2; k++)
+			b[k] += v * row[k];
+	}
+	for (int k = 0; k < h2; k++)
+		b[k] = std::min(std::max(b[k], 0.0f), 1.0f);
+}
+
+void evaluate(const Net &net, const State &s, const std::vector<Action> &acts, Eval &out) {
+	out.logits.assign(acts.size(), 0.0f);
+	if (!net.loaded()) {
+		out.v = float(std::tanh(cf::evaluate(s, s.turn_team, LIN_W) / 2.0));
+		out.aux = 0.0f;
+		return;
+	}
+	NetInput in;
+	net_input(s, s.turn_team, in);
+	static thread_local std::vector<float> b;
+	forward(net, in, b);
+	const int h2 = net.h2;
+	float v = net.bv, ax = net.ba;
+	for (int k = 0; k < h2; k++) {
+		v += b[k] * net.wv[k];
+		ax += b[k] * net.wa[k];
+	}
+	out.v = std::tanh(v);
+	out.aux = std::tanh(ax);
+	for (size_t i = 0; i < acts.size(); i++) {
+		int ai = action_index(s, acts[i]);
+		if (ai < 0)
+			continue;
+		float l = net.bp[ai];
+		for (int k = 0; k < h2; k++)
+			l += b[k] * net.wp[size_t(k) * NA + ai];
+		out.logits[i] = l;
+	}
+}
+
+// ---------- 탐색 ----------
+namespace {
+
+struct Rng {
+	unsigned long long s;
+	explicit Rng(unsigned long long seed) : s(seed ? seed : 0x9E3779B97F4A7C15ull) {}
+	unsigned long long next() {
+		s ^= s >> 12;
+		s ^= s << 25;
+		s ^= s >> 27;
+		return s * 0x2545F4914F6CDD1Dull;
+	}
+	double unit() { return double(next() >> 11) * (1.0 / 9007199254740992.0); }
+	double gumbel() { return -std::log(-std::log(std::max(unit(), 1e-12))); }
+};
+
+struct Node {
+	State s;
+	int mover = -1;            // 이 마디에서 두는 팀 (끝난 판이면 부모의 팀)
+	bool terminal = false;
+	float v = 0.0f;            // 망 가치 (mover 관점) · 끝난 판이면 결과
+	std::vector<Action> acts;
+	std::vector<float> logits;
+	std::vector<int> child;    // 마디 번호 (−1 = 아직)
+	std::vector<int> n;        // 자식 방문 수
+	std::vector<double> w;     // 자식 가치 합 (이 마디 mover 관점)
+	int N = 0;                 // 자식 방문 합
+};
+
+struct Tree {
+	const Net &net;
+	const Params &p;
+	std::vector<Node> nodes;
+	explicit Tree(const Net &n_, const Params &p_) : net(n_), p(p_) {}
+
+	// 합법 수가 없는 국면은 턴을 넘긴 국면으로 바꾼다 (하네스·UI가 end_turn을 부르는 것과 같다)
+	int make(State s, int parent_mover) {
+		Node nd;
+		for (int guard = 0; guard < 8 && s.phase != GAME_OVER; guard++) {
+			enumerate_actions(s, nd.acts);
+			if (!nd.acts.empty())
+				break;
+			s.end_turn();
+		}
+		nd.s = s;
+		if (s.phase == GAME_OVER || nd.acts.empty()) {
+			nd.terminal = true;
+			nd.mover = parent_mover < 0 ? s.turn_team : parent_mover;
+			nd.v = s.winner == -1 ? 0.0f : (s.winner == nd.mover ? 1.0f : -1.0f);
+		} else {
+			nd.mover = s.turn_team;
+			Eval e;
+			evaluate(net, s, nd.acts, e);
+			nd.v = e.v;
+			nd.logits = std::move(e.logits);
+			nd.child.assign(nd.acts.size(), -1);
+			nd.n.assign(nd.acts.size(), 0);
+			nd.w.assign(nd.acts.size(), 0.0);
+		}
+		nodes.push_back(std::move(nd));
+		return int(nodes.size()) - 1;
+	}
+
+	double sigma(const Node &nd, double q) const {
+		int maxn = 0;
+		for (int x : nd.n)
+			maxn = std::max(maxn, x);
+		return (p.c_visit + maxn) * p.c_scale * q;
+	}
+
+	// 완성된 Q (Gumbel 논문 식): 방문한 수는 평균값, 안 한 수는 v_mix
+	void completed_q(const Node &nd, std::vector<double> &q) const {
+		size_t k = nd.acts.size();
+		std::vector<double> pi(k);
+		double mx = -1e30;
+		for (size_t i = 0; i < k; i++)
+			mx = std::max(mx, double(nd.logits[i]));
+		double sum = 0.0;
+		for (size_t i = 0; i < k; i++) {
+			pi[i] = std::exp(double(nd.logits[i]) - mx);
+			sum += pi[i];
+		}
+		double vis_pi = 0.0, vis_piq = 0.0;
+		for (size_t i = 0; i < k; i++) {
+			pi[i] /= sum;
+			if (nd.n[i] > 0) {
+				vis_pi += pi[i];
+				vis_piq += pi[i] * (nd.w[i] / nd.n[i]);
+			}
+		}
+		double vmix = nd.v;
+		if (nd.N > 0 && vis_pi > 0.0)
+			vmix = (nd.v + nd.N * (vis_piq / vis_pi)) / (1.0 + nd.N);
+		q.resize(k);
+		for (size_t i = 0; i < k; i++)
+			q[i] = nd.n[i] > 0 ? nd.w[i] / nd.n[i] : vmix;
+	}
+
+	// 개선된 정책 π' = softmax(logits + σ(완성된 Q))
+	void improved_policy(const Node &nd, std::vector<double> &pi) const {
+		std::vector<double> q;
+		completed_q(nd, q);
+		size_t k = nd.acts.size();
+		pi.resize(k);
+		double mx = -1e30;
+		for (size_t i = 0; i < k; i++) {
+			pi[i] = double(nd.logits[i]) + sigma(nd, q[i]);
+			mx = std::max(mx, pi[i]);
+		}
+		double sum = 0.0;
+		for (size_t i = 0; i < k; i++) {
+			pi[i] = std::exp(pi[i] - mx);
+			sum += pi[i];
+		}
+		for (size_t i = 0; i < k; i++)
+			pi[i] /= sum;
+	}
+
+	// 뿌리 아래: 결정론 선택 argmax(π'(a) − n(a)/(1+N))
+	int pick_child(const Node &nd) const {
+		std::vector<double> pi;
+		improved_policy(nd, pi);
+		int best = 0;
+		double bs = -1e30;
+		for (size_t i = 0; i < nd.acts.size(); i++) {
+			double sc = pi[i] - double(nd.n[i]) / (1.0 + nd.N);
+			if (sc > bs) {
+				bs = sc;
+				best = int(i);
+			}
+		}
+		return best;
+	}
+
+	// 뿌리의 수 a를 한 번 더 파고 내려간다. 돌려주는 값 = 뿌리 mover 관점
+	double simulate(int root, int a) {
+		std::vector<std::pair<int, int>> path;   // (마디, 자식 번호)
+		int cur = root;
+		int ai = a;
+		double leaf = 0.0;
+		int leaf_mover = -1;
+		for (;;) {
+			Node &nd = nodes[cur];
+			path.push_back({ cur, ai });
+			if (nd.child[ai] == -1) {
+				State c = nd.s;
+				apply_action(c, nd.acts[ai]);
+				int ci = make(c, nd.mover);
+				nodes[cur].child[ai] = ci;
+				leaf = nodes[ci].v;
+				leaf_mover = nodes[ci].mover;
+				break;
+			}
+			cur = nd.child[ai];
+			Node &cn = nodes[cur];
+			if (cn.terminal) {
+				leaf = cn.v;
+				leaf_mover = cn.mover;
+				break;
+			}
+			ai = pick_child(cn);
+		}
+		for (auto it = path.rbegin(); it != path.rend(); ++it) {
+			Node &nd = nodes[it->first];
+			double val = nd.mover == leaf_mover ? leaf : -leaf;
+			nd.n[it->second] += 1;
+			nd.w[it->second] += val;
+			nd.N += 1;
+		}
+		Node &r = nodes[root];
+		return r.mover == leaf_mover ? leaf : -leaf;
+	}
+};
+
+} // namespace
+
+Result search(const State &s0, const Net &net, const Params &p) {
+	Result res;
+	Tree tree(net, p);
+	tree.nodes.reserve(size_t(p.sims) * 2 + 8);
+	int root = tree.make(s0, -1);
+	Node &r0 = tree.nodes[root];
+	res.acts = r0.acts;
+	if (r0.terminal || r0.acts.empty()) {
+		res.root_v = r0.v;
+		return res;
+	}
+	const size_t k = r0.acts.size();
+	for (size_t i = 0; i < k; i++) {   // 성격 손잡이 — 뿌리에서만
+		const Action &a = r0.acts[i];
+		if (a.t >= 0 && a.t < N_ACT)
+			r0.logits[i] += float(p.kind_bias[a.t]);
+		if (a.t == A_PLACE && a.uid >= 0 && a.uid < NN_NPOS)
+			r0.logits[i] += float(p.slot_bias[a.uid]);
+	}
+	Rng rng(p.seed);
+	std::vector<double> g(k, 0.0);
+	if (p.gumbel)
+		for (size_t i = 0; i < k; i++)
+			g[i] = rng.gumbel();
+	// 뿌리 후보: logit + g 상위 m개 → 순차 반감
+	std::vector<int> cand(k);
+	for (size_t i = 0; i < k; i++)
+		cand[i] = int(i);
+	std::sort(cand.begin(), cand.end(), [&](int a, int b) { return g[a] + r0.logits[a] > g[b] + r0.logits[b]; });
+	int m = std::min<int>(p.top_m, int(k));
+	cand.resize(m);
+	if (m > 1) {
+		int phases = 0;
+		for (int x = m; x > 1; x = (x + 1) / 2)
+			phases++;
+		int used = 0;
+		while (cand.size() > 1 && used < p.sims) {
+			int per = std::max(1, (p.sims - used) / (phases * int(cand.size())));
+			for (int rep = 0; rep < per && used < p.sims; rep++)
+				for (int a : cand) {
+					if (used >= p.sims)
+						break;
+					tree.simulate(root, a);
+					used++;
+				}
+			phases = std::max(1, phases - 1);
+			Node &r = tree.nodes[root];
+			auto score = [&](int a) {
+				double q = r.n[a] > 0 ? r.w[a] / r.n[a] : 0.0;
+				return g[a] + r.logits[a] + tree.sigma(r, q);
+			};
+			std::sort(cand.begin(), cand.end(), [&](int a, int b) { return score(a) > score(b); });
+			if (cand.size() > 1)
+				cand.resize((cand.size() + 1) / 2);
+		}
+		// 남은 예산은 1등을 더 다진다 (뿌리 가치 추정 정밀도)
+		while (used < p.sims) {
+			tree.simulate(root, cand[0]);
+			used++;
+		}
+	} else {
+		for (int i = 0; i < std::max(1, p.sims / 4); i++)
+			tree.simulate(root, cand[0]);
+	}
+	Node &r = tree.nodes[root];
+	res.found = true;
+	res.action = r.acts[cand[0]];
+	std::vector<double> pi;
+	tree.improved_policy(r, pi);
+	if (p.sample_top > 0) {   // 쉬움: 개선 정책 상위 k개 중에서 확률대로 뽑는다 (스탯 치트 없이 사람처럼 틀린다)
+		std::vector<int> ord(k);
+		for (size_t i = 0; i < k; i++)
+			ord[i] = int(i);
+		std::sort(ord.begin(), ord.end(), [&](int a, int b) { return pi[a] > pi[b]; });
+		int kk = std::min<int>(p.sample_top, int(k));
+		double sum = 0.0;
+		for (int i = 0; i < kk; i++)
+			sum += pi[ord[i]];
+		double u = rng.unit() * sum;
+		int pickd = ord[0];
+		for (int i = 0; i < kk; i++) {
+			u -= pi[ord[i]];
+			if (u <= 0.0) {
+				pickd = ord[i];
+				break;
+			}
+		}
+		res.action = r.acts[pickd];
+	}
+	res.action_idx = action_index(s0, res.action);
+	res.policy.assign(pi.begin(), pi.end());
+	res.visits = r.n;
+	std::vector<double> q;
+	tree.completed_q(r, q);
+	double rv = 0.0;
+	for (size_t i = 0; i < k; i++)
+		rv += pi[i] * q[i];
+	res.root_v = float(rv);
+	return res;
+}
+
+// ---------- 자가대전 기보 ----------
+void selfplay(const Net &net, int games, int sims, unsigned long long seed, int temp_moves, double lam,
+		std::vector<Rec> &out, GenStats &st) {
+	Params prm;
+	prm.sims = sims;
+	std::vector<Rec> recs;
+	std::vector<int> mover;
+	for (int g = 0; g < games; g++) {
+		Rng rng(seed * 1000003ull + g);
+		State s;
+		s.subs_enabled = 1;
+		new_open_match(s, g % 2 == 0 ? HOME : AWAY);
+		recs.clear();
+		mover.clear();
+		int guard = 0;
+		int ply = 0;
+		while (s.phase != GAME_OVER && guard++ < 6000) {
+			prm.seed = rng.next();
+			Result r = search(s, net, prm);
+			if (!r.found) {
+				s.end_turn();
+				continue;
+			}
+			Rec rec;
+			NetInput in;
+			net_input(s, s.turn_team, in);
+			for (int i = 0; i < NN_MAX_ACTIVE; i++)
+				rec.idx[i] = i < in.n ? in.idx[i] : 0xFFFF;
+			std::memcpy(rec.dense, in.dense, sizeof(rec.dense));
+			std::vector<int> order(r.acts.size());
+			for (size_t i = 0; i < order.size(); i++)
+				order[i] = int(i);
+			std::sort(order.begin(), order.end(), [&](int a, int b) { return r.policy[a] > r.policy[b]; });
+			float mass = 0.0f;
+			int kk = 0;
+			for (int i : order) {
+				if (kk >= PI_K)
+					break;
+				int ai = action_index(s, r.acts[i]);
+				if (ai < 0)
+					continue;
+				rec.pi_idx[kk] = uint16_t(ai);
+				rec.pi_p[kk] = r.policy[i];
+				mass += r.policy[i];
+				kk++;
+			}
+			for (int i = 0; i < kk; i++)
+				rec.pi_p[i] /= std::max(mass, 1e-6f);
+			for (int i = kk; i < PI_K; i++) {
+				rec.pi_idx[i] = 0xFFFF;
+				rec.pi_p[i] = 0.0f;
+			}
+			rec.q = r.root_v;
+			rec.z = 0.0f;
+			rec.aux = 0.0f;
+			rec.game = uint32_t(seed * 100003ull + g);
+			recs.push_back(rec);
+			mover.push_back(s.turn_team);
+			Action a = r.action;
+			if (ply < temp_moves) {
+				double u = rng.unit();
+				for (size_t i = 0; i < r.acts.size(); i++) {
+					u -= r.policy[i];
+					if (u <= 0.0) {
+						a = r.acts[i];
+						break;
+					}
+				}
+			}
+			apply_action(s, a);
+			ply++;
+		}
+		int win = s.phase == GAME_OVER ? s.winner : -1;
+		st.games++;
+		if (win == -1)
+			st.draws++;
+		else if (win == HOME)
+			st.home++;
+		else
+			st.away++;
+		st.moves += (long long)recs.size();
+		for (size_t i = 0; i < recs.size(); i++) {
+			int me = mover[i];
+			double z = win == -1 ? 0.0 : (win == me ? 1.0 : -1.0);
+			recs[i].z = float(lam * z + (1.0 - lam) * recs[i].q);
+			int d = s.score[me] - s.score[1 - me];
+			recs[i].aux = float(std::max(-1.0, std::min(1.0, d / 2.0)));
+		}
+		out.insert(out.end(), recs.begin(), recs.end());
+	}
+}
+
+} // namespace az
+} // namespace cf
