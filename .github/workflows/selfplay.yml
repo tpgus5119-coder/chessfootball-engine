@@ -1,6 +1,7 @@
 name: selfplay
 # 알파제로 자가대전 기보 공장 — 20개 작업이 동시에 돈다. 챔피언 망은 release "champion"의 champion.bin.
-# 결과 기보는 artifact로 올라가고, 학습하는 맥이 tools/az/gh_pull.py로 받아 간다
+# 결과 기보는 작업마다 artifact로 모였다가, 마지막 bundle 작업이 한 파일(xz)로 묶어 release "recs" 자산으로 올린다.
+# 학습하는 맥(tools/az/gh.py)은 release 자산을 받는다 — artifact 내려받기는 release CDN보다 7배쯤 느렸다 (18KB/s vs 135KB/s, 2026-10-21 실측)
 on:
   workflow_dispatch:
     inputs:
@@ -39,4 +40,23 @@ jobs:
         with:
           name: recs-${{ github.run_id }}-${{ matrix.k }}
           path: rec_*.bin
-          retention-days: 2
+          retention-days: 1
+  bundle:
+    needs: gen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: recs
+          pattern: recs-${{ github.run_id }}-*
+          merge-multiple: true
+      - name: pack
+        run: |
+          cat recs/*.bin | xz -6 -T0 > recs-${{ github.run_id }}.bin.xz
+          ls -la recs-*.bin.xz
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view recs >/dev/null 2>&1 || gh release create recs -t recs -n "자가대전 기보 묶음 (맥이 받아 가면 지운다)"
+          gh release upload recs recs-${{ github.run_id }}.bin.xz --clobber
