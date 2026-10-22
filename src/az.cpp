@@ -449,9 +449,8 @@ Result search(const State &s0, const Net &net, const Params &p) {
 
 // ---------- 자가대전 기보 ----------
 void selfplay(const Net &net, int games, int sims, unsigned long long seed, int temp_moves, double lam,
-		std::vector<Rec> &out, GenStats &st) {
+		std::vector<Rec> &out, GenStats &st, int fast_sims, double full_frac) {
 	Params prm;
-	prm.sims = sims;
 	std::vector<Rec> recs;
 	std::vector<int> mover;
 	for (int g = 0; g < games; g++) {
@@ -465,6 +464,8 @@ void selfplay(const Net &net, int games, int sims, unsigned long long seed, int 
 		int ply = 0;
 		while (s.phase != GAME_OVER && guard++ < 6000) {
 			prm.seed = rng.next();
+			bool full = fast_sims <= 0 || rng.unit() < full_frac;
+			prm.sims = full ? sims : fast_sims;
 			Result r = search(s, net, prm);
 			if (!r.found) {
 				s.end_turn();
@@ -483,7 +484,7 @@ void selfplay(const Net &net, int games, int sims, unsigned long long seed, int 
 			float mass = 0.0f;
 			int kk = 0;
 			for (int i : order) {
-				if (kk >= PI_K)
+				if (kk >= PI_K || !full)   // 빠른 수는 정책 목표 없음 (train.py가 pi_idx 전부 0xFFFF 인 줄을 정책 손실에서 뺀다)
 					break;
 				int ai = action_index(s, r.acts[i]);
 				if (ai < 0)

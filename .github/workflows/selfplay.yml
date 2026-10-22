@@ -9,8 +9,14 @@ on:
         description: "프로세스당 판수"
         default: "60"
       sims:
-        description: "탐색 횟수"
-        default: "96"
+        description: "풀탐색 횟수"
+        default: "192"
+      fast:
+        description: "빠른 수 탐색 횟수 (탐색 상한 무작위)"
+        default: "24"
+      frac:
+        description: "풀탐색 비율"
+        default: "0.25"
 permissions:
   contents: write   # bundle 작업이 release 자산을 올린다
 jobs:
@@ -34,7 +40,7 @@ jobs:
           NET=champion.bin; [ -f "$NET" ] || NET=-
           N=$(nproc)
           for i in $(seq 0 $((N-1))); do
-            ./gen "rec_${{ matrix.k }}_$i.bin" "${{ github.event.inputs.games }}" "${{ github.event.inputs.sims }}" "$(( ${{ github.run_number }} * 10000 + ${{ matrix.k }} * 100 + i ))" "$NET" 12 0.7 &
+            ./gen "rec_${{ matrix.k }}_$i.bin" "${{ github.event.inputs.games }}" "${{ github.event.inputs.sims }}" "$(( ${{ github.run_number }} * 10000 + ${{ matrix.k }} * 100 + i ))" "$NET" 12 0.7 "${{ github.event.inputs.fast }}" "${{ github.event.inputs.frac }}" &
           done
           wait
           ls -la rec_*.bin

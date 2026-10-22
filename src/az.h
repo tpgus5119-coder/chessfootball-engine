@@ -95,9 +95,12 @@ struct GenStats {
 	long long moves = 0;
 };
 // 양 팀 모두 Gumbel 탐색으로 드래프트·배치·교체·경기를 둔 기보를 out에 쌓는다 (gen.cpp·게임 안 공장 모드가 같이 쓴다).
-// 처음 temp_moves수는 개선 정책에서 뽑아 개막을 흩고, z = λ·결과 + (1−λ)·탐색 가치
+// 처음 temp_moves수는 개선 정책에서 뽑아 개막을 흩고, z = λ·결과 + (1−λ)·탐색 가치.
+// **탐색 상한 무작위**(KataGo 'playout cap randomization', 2026-10-22): fast_sims > 0 이면 수마다 full_frac 확률로만
+// sims회 풀탐색을 하고 그 국면만 정책 목표를 적는다(pi_idx). 나머지 수는 fast_sims회로 빨리 두고 가치 목표(z·aux)만 남긴다
+// — 같은 시간에 판이 3~4배 늘어 가치 학습이 좋아지고, 정책 목표는 풀탐색 것만 써서 질이 안 떨어진다
 void selfplay(const Net &net, int games, int sims, unsigned long long seed, int temp_moves, double lam,
-		std::vector<Rec> &out, GenStats &st);
+		std::vector<Rec> &out, GenStats &st, int fast_sims = 0, double full_frac = 1.0);
 
 } // namespace az
 } // namespace cf
