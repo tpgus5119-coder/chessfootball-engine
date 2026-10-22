@@ -3,7 +3,7 @@
 //   A·B = 망 파일 | '-' (첫 세대: 선형 가치 + 균일 정책으로 탐색) | 'mm3' (지금 게임 AI — 손평가 미니맥스 깊이 3. mm2도 됨)
 // 탐색은 잡음 없이(결정론) 둔다. 봇이 결정론이라 같은 개막이면 같은 판 — 그래서 처음 두 번의 드래프트만 무작위로
 // 두고, 판마다 A가 HOME·AWAY, 선공·후공을 번갈아 맡는다 (tools/nn/arena.cpp와 같은 규약)
-#include "../../gdext/src/az.h"
+#include "../src/az.h"
 
 #include <cmath>
 #include <cstdio>

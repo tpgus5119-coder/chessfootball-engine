@@ -2,7 +2,7 @@
 //   gen <출력> <판수> <탐색 횟수> <시드> <망 파일 | -> [온도 수 N=12] [결과 비중 λ=0.7] [빠른 탐색 횟수=0] [풀탐색 비율=1]
 // 빠른 탐색 횟수 > 0 이면 탐색 상한 무작위 (az.h selfplay 설명)
 // 망이 '-'이면 첫 세대: 가치 = 선형 평가, 정책 = 균일 (탐색이 정책을 만든다)
-#include "../../gdext/src/az.h"
+#include "../src/az.h"
 
 #include <cstdio>
 #include <cstdlib>
