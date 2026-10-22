@@ -1236,6 +1236,8 @@ struct PassCtx {
 
 // 공중볼(롱패스 = 5칸 이상)만 적의 몸과 골대 위를 넘는다 (spec 5.0 v5.12). 사거리가 5에 못 미치면
 // 롱패스 자체가 불가능하므로 두 번째 탐색을 돌리지 않는다 (열거는 탐색 봇의 핫루프다)
+static const int LAUNCHER_FAR = 6;   // v5.70 런처 2포인트 롱볼 사거리 (ball_actions.gd LAUNCHER_FAR)
+
 static void pass_ctx(const State &s, const Player &p, PassCtx &ctx) {
 	ctx.dirs = pass_dirs(s, p);
 	ctx.rng = ball_range(s, p, p.pass_range());
@@ -1257,9 +1259,9 @@ static void pass_ctx(const State &s, const Player &p, PassCtx &ctx) {
 		}
 	}
 	// v5.68 런처 롱볼: 포인트 2가 남아 있으면 사거리 무제한 공중볼 (ball_actions _pass_ctx)
-	if (p.position == LAUNCHER && s.pts >= 2) {
+	if (p.position == LAUNCHER && s.pts >= 2) {   // v5.70: 무제한 → 6칸(+부스터)
 		Reach far;
-		reach(s, p, W + H, ctx.dirs, true, open, UNSET, far, true);
+		reach(s, p, ball_range(s, p, LAUNCHER_FAR), ctx.dirs, true, open, UNSET, far, true);
 		for (int i = 0; i < far.n; i++) {
 			V2 t = far.order[i];
 			if (!ctx.dist.has(t) && manhattan(p.pos, t) >= LONG_PASS_MIN)
@@ -1358,11 +1360,12 @@ static bool do_pass_to(State &s, int uid, V2 dest, int want = -1) {
 	// v5.12: 달려 받기 폐지 — 목적지는 아군이 서 있는 칸뿐.
 	// v5.15 크리에이터만 예외: 빈 칸에 놓으면 루즈볼이 된다 (골대 칸은 구조물이라 제외)
 	const Player *receiver = player_at(s, dest);
+	if (is_offside(*p, dest, offside_line(s, p->team)))
+		return false;   // v5.70: 오프사이드 지역은 빈 칸도 못 보낸다
 	if (!receiver) {
 		if (is_goal(dest) || !p->space_pass())
 			return false;   // 빈 칸에 놓는 것은 크리에이터의 것이다 (spec 5.4 v5.24)
-	} else if (receiver->team != p->team || receiver->uid == p->uid ||
-			is_offside(*p, dest, offside_line(s, p->team))) {
+	} else if (receiver->team != p->team || receiver->uid == p->uid) {
 		return false;
 	}
 	bool long_pass = manhattan(p->pos, dest) >= LONG_PASS_MIN;
@@ -1541,8 +1544,8 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 			for (int i = 0; i < pc.dist.n; i++) {
 				V2 t = pc.dist.order[i];
 				int o = occ[idx(t)];
-				bool ok = (o != -1 && s.players[o].team == q.team && o != u) ? !is_offside(q, t, line)
-						: (o == -1 && !is_goal(t) && space);
+				bool ok = !is_offside(q, t, line) && ((o != -1 && s.players[o].team == q.team && o != u)   // v5.70: 오프사이드 지역은 빈 칸도 ×
+						|| (o == -1 && !is_goal(t) && space));
 				if (!ok)
 					continue;
 				if (q.position == MAESTRO) {   // v5.68: 포인트 0·1·2 — action_space.gd와 같은 순서
