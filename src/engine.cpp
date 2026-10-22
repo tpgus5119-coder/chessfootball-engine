@@ -1184,6 +1184,16 @@ static void pass_ctx(const State &s, const Player &p, PassCtx &ctx) {
 				ctx.dist.add(t, air.step[idx(t)]);
 		}
 	}
+	// v5.67 마에스트로 롱볼: 포인트 2가 남아 있으면 사거리 무제한 공중볼 (ball_actions _pass_ctx)
+	if (p.position == MAESTRO && s.pts >= 2) {
+		Reach far;
+		reach(s, p, W + H, ctx.dirs, true, open, UNSET, far, true);
+		for (int i = 0; i < far.n; i++) {
+			V2 t = far.order[i];
+			if (!ctx.dist.has(t) && manhattan(p.pos, t) >= LONG_PASS_MIN)
+				ctx.dist.add(t, far.step[idx(t)]);
+		}
+	}
 	// v5.40 타워는 어떤 패스든 받는다 — 땅으로 막힌 자리여도 사거리 안이면 공중으로 닿는다 (ball_actions _tower_of)
 	const Player *tw = tower_of(s, p);
 	if (tw && !ctx.dist.has(tw->pos)) {
@@ -1288,6 +1298,8 @@ static bool do_pass_to(State &s, int uid, V2 dest) {
 	int back = aerial ? std::max(0, -(dest.x - p->pos.x) * forward_dir(p->team))
 						 : back_steps(*p, path);
 	bool intercepted = send_ball(s, *p, path, PAS, back);
+	if (long_pass && manhattan(p->pos, dest) > ctx.rng)
+		s.pts -= 1;   // v5.67 마에스트로 롱볼: 보통 사거리 밖은 포인트 2
 	if (!intercepted) {
 		if (receiver_uid != -1) {
 			s.set_ball_owner(receiver_uid);
