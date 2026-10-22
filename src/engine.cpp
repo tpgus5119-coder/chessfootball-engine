@@ -1040,17 +1040,18 @@ static int legal_tackle_target(const State &s, const Player &p) { // -1 = 없음
 		return -1; // 마커는 실제로 잡고 있는 공 임자에게 태클하지 못한다 (v5.47 · v5.57)
 	if (dist <= 1)
 		return owner.uid;
-	// v5.12: 태클도 5.0의 통과 규칙을 따른다 — 아군 몸은 넘고 적군 몸은 못 넘는다.
-	// 대상 본인의 타일만 예외다 (거기가 목적지)
-	bool blocked[NT];
-	box_blocked(blocked);
-	for (int u = 0; u < PLAYERS; u++)
-		if (s.players[u].is_placed() && s.players[u].team != p.team && u != owner.uid)
-			blocked[idx(s.players[u].pos)] = true;
-	Reach r;
-	reach(s, p, p.tackle_range(), step_dirs(p.team, M_ALL), true, blocked, UNSET, r);
-	return r.has(owner.pos) ? owner.uid : -1;
+	// v5.66: 2칸 태클(헌터) = 포인트 2, 가로·세로면 가운데 칸이 비어 있어야 (아군·적군 모두 막는다). 대각선은 사이 칸이 없다
+	if (s.pts < 2)
+		return -1;
+	if (owner.pos.x == p.pos.x || owner.pos.y == p.pos.y) {
+		V2 mid = { (owner.pos.x + p.pos.x) / 2, (owner.pos.y + p.pos.y) / 2 };
+		if (player_at(s, mid))
+			return -1;
+	}
+	return owner.uid;
 }
+
+static int tackle_cost(const Player &p, V2 target) { return manhattan(target, p.pos) >= 2 ? 2 : 1; }
 
 static bool do_tackle(State &s, int uid, int target_uid) {
 	const Player &p = s.players[uid];
@@ -1059,7 +1060,7 @@ static bool do_tackle(State &s, int uid, int target_uid) {
 	const Player &owner = s.players[target_uid];
 	int pre_bt = s.ball_team();
 	s.turn_actions += 1;
-	s.pts -= 1;
+	s.pts -= tackle_cost(p, owner.pos);   // v5.66: 2칸 태클은 2
 	CRes c = resolve(s, owner, DRB, p, TKL, owner.pos); // 소유자 공격(DRB) vs 태클러 수비(TKL)
 	if (!c.atk_wins) {
 		s.set_ball_owner(uid);
