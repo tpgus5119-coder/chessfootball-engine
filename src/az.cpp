@@ -27,12 +27,13 @@ int action_index(const State &s, const Action &a) {
 			int me = a.uid - PER_TEAM * team;
 			if (me < 0 || me >= PER_TEAM || !in_bounds(a.dest))
 				return -1;
+			if (a.t == A_PASS && (a.cost == 0 || a.cost == 2))   // v5.68 마에스트로 0·2포인트 패스는 따로 센다
+				return OFF_PASSC + ((a.cost == 0 ? 0 : 1) * PER_TEAM + me) * NT + flip_tile(a.dest, team);
 			return OFF_TILE + (kind * PER_TEAM + me) * NT + flip_tile(a.dest, team);
 		}
 		case A_TACKLE:
-		case A_PUSH:
-		case A_MARK: {
-			int kind = a.t == A_TACKLE ? 0 : a.t == A_PUSH ? 1 : 2;
+		case A_PUSH: {
+			int kind = a.t == A_TACKLE ? 0 : 1;
 			int me = a.uid - PER_TEAM * team;
 			int tg = a.dest.x - PER_TEAM * opp;
 			if (me < 0 || me >= PER_TEAM || tg < 0 || tg >= PER_TEAM)
@@ -43,6 +44,12 @@ int action_index(const State &s, const Action &a) {
 			int me = a.uid - PER_TEAM * team;
 			return me < 0 || me >= PER_TEAM ? -1 : OFF_STANCE + me;
 		}
+		case A_HOLD: {
+			int me = a.uid - PER_TEAM * team;
+			return me < 0 || me >= PER_TEAM ? -1 : OFF_HOLD + me;
+		}
+		case A_END:
+			return OFF_END;
 		case A_PLACE: {
 			if (a.uid < 0 || a.uid >= NN_NPOS || !in_bounds(a.dest))
 				return -1;

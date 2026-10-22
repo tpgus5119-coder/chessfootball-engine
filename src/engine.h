@@ -9,7 +9,7 @@
 namespace cf {
 
 constexpr int W = 10, H = 7, NT = W * H;          // board.gd
-constexpr int PLAYERS = 8, PER_TEAM = 4;
+constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
 constexpr int HALF_TURNS = 60, MAX_TURNS = 120, POINTS_PER_TURN = 2; // game_state.gd (v5.44 — 반마다 팀당 30턴)
 constexpr int BUF_HEAD = 21, BUF_LEN = BUF_HEAD + PLAYERS * 6; // v5.57: 선수당 6칸 (마커가 고른 잡기 대상) // v5.38 점수·전후반·재배치·교체 차례 · v5.39 골 턴 · v5.40 콤보 · v5.45 버티기
 constexpr int LONG_PASS_MIN = 5;                   // ball_actions.gd (v5.12)
@@ -31,13 +31,13 @@ enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2, SUB = 3 }; // SUB = 하프�
 // 크리에이터(9)는 풀에서 빠졌고 7은 폐지된 부스터 자리다 — 번호는 구멍으로 남긴다 (기보·저장 호환).
 // v5.38: 퀵슈터(11) · v5.40: 타워(12 — 캡틴 자리를 이었다)
 enum Pos { PROSPECT = 0, CANNON = 1, MAESTRO = 2, TRICKSTER = 3, TITAN = 4, MARKER = 5,
-	HUNTER = 6, BOOSTER = 7, WALL = 8, CREATOR = 9, SPRINTER = 10, QUICK = 11, TOWER = 12 };
+	HUNTER = 6, BOOSTER = 7, WALL = 8, CREATOR = 9, SPRINTER = 10, QUICK = 11, LAUNCHER = 12 };   // v5.68: 12 = 런처 (옛 타워 자리)
 enum Stat { SHT = 0, PAS, DRB, INT_, TKL, PHY };
 // 액션 종류 (GDScript 문자열과 1:1 — minimax_bot.gd ACT_NAME과 같은 순서가 인코딩 계약이다).
 // 자리 3 = 배치 (v5.9). v5.38: 자리 6(골키퍼킥 폐지)을 **하프타임 교체**가 물려받고 8번에 **해제**가 붙었다. v5.59: 8번 해제 폐지 → **마커 수동 잡기**(A_MARK, dest.x = 대상 uid).
 // 교체는 uid −1 = 안 바꿈, 아니면 dest.x = 벤치 슬롯(DRAFT_POOL 인덱스)
-enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_SUB, A_STANCE, A_MARK, A_PUSH };
-constexpr int N_ACT = 10;   // v5.41: 9 = 제자리 밀기 · v5.64: 버티기(10) 폐지 — 자동
+enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_SUB, A_STANCE, A_HOLD, A_PUSH, A_END };
+constexpr int N_ACT = 11;   // v5.68: 8 = 버티기(캐논 1포인트, 옛 잡기 자리) · 9 = 제자리 밀기 · 10 = 턴 종료. 잡기 폐지
 
 inline bool in_bounds(V2 t) { return t.x >= 0 && t.x < W && t.y >= 0 && t.y < H; }
 inline int idx(V2 t) { return t.y * W + t.x; } // in_bounds 전제
@@ -74,11 +74,11 @@ struct Player {
 	bool is_placed() const { return placed_order >= 0; }
 	int stat(int key) const; // 기본 3, 포지션 보너스 4 (player_state.gd)
 	int move_range() const { return position == SPRINTER ? 4 : 3; } // v5.15 스프린터만 4칸
-	int dribble_range() const { return position == TRICKSTER ? 3 : 2; } // 치달 없이 갈 수 있는 거리
-	int pass_range() const { return position == MAESTRO ? 5 : 4; }
+	int dribble_range() const { return 2; } // v5.68: 트릭스터 3칸은 2포인트 특기 (치달 없이 갈 수 있는 거리)
+	int pass_range() const { return position == LAUNCHER ? 5 : 4; }   // v5.68: 런처 5 (2포인트는 무제한). 마에스트로는 4, 포인트로 스탯만
 	int shot_range() const { return position == CANNON ? 5 : 4; }  // v5.38: 캐논 5
 	int shot_cost() const { return position == QUICK ? 1 : 2; }    // v5.38: 슛 포인트 2, 퀵슈터 1
-	int tackle_range() const { return position == HUNTER ? 2 : 1; }
+	int tackle_range() const { return 1; }   // v5.68: 헌터 2칸은 2포인트 특기 (legal_tackle_target)
 	bool wide_zone() const { return stance == 1 || position == WALL; }
 	bool space_pass() const { return true; }  // v5.30: 빈 칸 패스는 전원 것이 됐다 (5.4)
 };
@@ -105,7 +105,7 @@ struct State {
 	int hold = 0;           // 타워 버티기 (v5.45 — game_state.gd hold): 0 가능 · 1 버티는 중 · 2 버틴 뒤 −1 · 3 먼저 드리블함
 	// 설정 (버퍼 제외 — 경기 중 불변. set_config로 넣는다)
 	int opener = HOME;      // 전반 선공
-	int subs_enabled = 1;   // 하프타임 교체 (배틀 1 · 컵 0)
+	int subs_enabled = 0;   // v5.68: 하프타임 교체 없음 (10종이 5:5로 다 나간다)
 	int absent_mask = 0;    // 결장 선수 (컵 부상 — uid 비트)
 	Player players[PLAYERS];
 
@@ -116,8 +116,8 @@ struct State {
 		players[uid].stance = 0;
 	}
 	void set_ball_owner(int uid) {
-		if (uid != ball_owner_uid) // v5.64: 타워가 잡으면 버티기 자동 (game_state.gd set_ball_owner)
-			hold = (uid != -1 && players[uid].position == TOWER) ? 1 : 0;
+		if (uid != ball_owner_uid) // v5.68: 버티기는 캐논의 1포인트 행동 — 공이 바뀌면 면역 끝 (game_state.gd set_ball_owner)
+			hold = 0;
 		ball_owner_uid = uid;
 		ball_pos = UNPLACED; // 주인이 생기면 루즈볼은 사라진다 (v5.15)
 		loose_team = -1;
@@ -153,6 +153,7 @@ struct Action {
 	int t = -1; // Act
 	int uid = -1;
 	V2 dest{ 0, 0 }; // 태클·밀기는 dest.x = 대상 uid (GDScript 인코딩 그대로)
+	int cost = -1;   // v5.68 마에스트로 패스 포인트 0·1·2 (= PAS 3·4·5). 그 밖의 수는 −1 (action_space.gd "cost")
 };
 
 // ai/action_space.gd — 열거(순서 고정)와 실행. apply는 결과 ok만 돌려준다 (상태가 곧 결과)
