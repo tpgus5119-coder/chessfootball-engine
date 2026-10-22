@@ -119,6 +119,7 @@ void State::end_turn() {
 	pts = POINTS_PER_TURN;
 	turn_actions = 0;
 	acted_mask = 0;
+	free_used = 0;
 	for (Player &p : players) // 수비 태세는 한 턴만 — 내 차례가 돌아오면 풀린다 (v5.65, game_state.gd end_turn)
 		if (p.team == turn_team)
 			p.stance = 0;
@@ -165,6 +166,7 @@ void State::save_buf(int *buf) const { // save_state와 같은 배치
 	buf[18] = goal_turn[0];
 	buf[19] = goal_turn[1];
 	buf[20] = hold;
+	buf[21] = free_used;
 	int i = BUF_HEAD;
 	for (int u = 0; u < PLAYERS; u++) {
 		buf[i] = players[u].pos.x;
@@ -198,6 +200,7 @@ void State::load_buf(const int *buf) {
 	goal_turn[0] = buf[18];
 	goal_turn[1] = buf[19];
 	hold = buf[20];
+	free_used = buf[21];
 	int i = BUF_HEAD;
 	for (int u = 0; u < PLAYERS; u++) {
 		players[u].pos = { buf[i], buf[i + 1] };
@@ -317,6 +320,7 @@ static bool commit_place(State &s, int uid, int position, V2 tile) {
 		s.pts = POINTS_PER_TURN;
 		s.turn_actions = 0;
 		s.acted_mask = 0;
+		s.free_used = 0;
 	} else {
 		s.turn_team = placement_team(s);
 	}
@@ -1329,9 +1333,11 @@ static void pass_cost(const State &s, const Player &p, V2 dest, int want, int &c
 	if (p.position == MAESTRO) {
 		int c = want >= 0 ? want : 1;
 		cost = std::max(0, std::min(2, c));
+		if (cost == 0 && s.free_used)   // v5.69: 공짜 패스는 팀당 한 턴에 한 번
+			cost = 1;
 		bonus = cost;
 	} else if (p.position == SPRINTER && (p.pos.y == 0 || p.pos.y == H - 1)) {
-		cost = 0;
+		cost = s.free_used ? 1 : 0;
 	} else if (p.position == LAUNCHER && manhattan(p.pos, dest) > ball_range(s, p, p.pass_range())) {
 		cost = 2;
 	}
@@ -1377,6 +1383,8 @@ static bool do_pass_to(State &s, int uid, V2 dest, int want = -1) {
 	if (s.ball_owner_uid == -1)
 		s.set_ball_owner(uid); // 킥오프 패스 — 공은 이 선수에게서 출발한다 (spec 3.2 v5.14)
 	bool intercepted = send_ball(s, *p, path, PAS, 0, cost, bonus);   // v5.68: 후진 값 0 · 포인트·보너스는 pass_cost
+	if (cost == 0)
+		s.free_used = 1;   // v5.69: 이 턴의 공짜 패스를 썼다
 	if (!intercepted) {
 		if (receiver_uid != -1) {
 			s.set_ball_owner(receiver_uid);
@@ -1539,7 +1547,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 					continue;
 				if (q.position == MAESTRO) {   // v5.68: 포인트 0·1·2 — action_space.gd와 같은 순서
 					for (int c = 0; c < 3; c++)
-						if (c <= s.pts)
+						if (c <= s.pts && (c > 0 || !s.free_used))   // v5.69: 공짜는 턴에 한 번
 							out.push_back({ A_PASS, u, t, c });
 				} else
 					out.push_back({ A_PASS, u, t });
@@ -1809,6 +1817,7 @@ static void reset_match(State &s, int first) {
 	s.goal_turn[0] = s.goal_turn[1] = 0;
 	s.winner = -1;
 	s.sub_step = 0;
+	s.free_used = 0;
 	for (int u = 0; u < PLAYERS; u++) {
 		s.players[u] = Player{};
 		s.players[u].uid = u;
