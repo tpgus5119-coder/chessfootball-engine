@@ -53,7 +53,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	float *d = in.dense;
 	d[0] = s.phase == PLACEMENT;
 	d[1] = s.phase == PLAY;
-	d[2] = 0.0f;   // 옛 하프타임 교체 단계 (v5.68 폐지) — 망 입력 칸 수를 안 바꾸려고 자리만 남긴다
+	d[2] = float(s.boost_on && team == s.turn_team);   // v5.83 이번 턴 부스트가 켜졌나 (옛 하프타임 교체 단계 칸을 물려받았다)
 	d[3] = s.half == 2;
 	d[4] = float(std::max(0, std::min(s.half_turn(), HALF_TURNS))) / float(HALF_TURNS);
 	d[5] = float(s.score[team]);

@@ -48,6 +48,10 @@ int action_index(const State &s, const Action &a) {
 			int me = a.uid - PER_TEAM * team;
 			return me < 0 || me >= PER_TEAM ? -1 : OFF_HOLD + me;
 		}
+		case A_BOOST: {   // v5.83 — 옛 교체 칸 자리를 쓴다 (망 형식 NA는 그대로)
+			int me = a.uid - PER_TEAM * team;
+			return me < 0 || me >= PER_TEAM ? -1 : OFF_SUB + me;
+		}
 		case A_END:
 			return OFF_END;
 		case A_PLACE: {

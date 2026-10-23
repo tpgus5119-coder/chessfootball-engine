@@ -34,9 +34,9 @@ enum Pos { PROSPECT = 0, CANNON = 1, MAESTRO = 2, TRICKSTER = 3, TITAN = 4, MARK
 	HUNTER = 6, BOOSTER = 7, WALL = 8, CREATOR = 9, SPRINTER = 10, QUICK = 11, LAUNCHER = 12 };   // v5.68: 12 = 런처 (옛 타워 자리)
 enum Stat { SHT = 0, PAS, DRB, INT_, TKL, PHY };
 // 액션 종류 (GDScript 문자열과 1:1 — minimax_bot.gd ACT_NAME과 같은 순서가 인코딩 계약이다).
-// 6(A_SUB) = 옛 하프타임 교체 자리 (v5.68 폐지 — 열거되지 않는다). 태클·밀기·잡기는 dest.x = 대상 uid
-enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_SUB, A_STANCE, A_HOLD, A_PUSH, A_END, A_GRAB };
-constexpr int N_ACT = 12;   // 8 = 캐논 버티기 · 9 = 타이탄 제자리 밀기 · 10 = 턴 종료 · 11 = 마커 잡기 (v5.80)
+// 6(A_BOOST) = 부스터 부스트 (v5.83 — 옛 하프타임 교체 자리를 물려받았다). 태클·밀기·잡기는 dest.x = 대상 uid
+enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_BOOST, A_STANCE, A_HOLD, A_PUSH, A_END, A_GRAB };
+constexpr int N_ACT = 12;   // 6 = 부스트 · 8 = 캐논 버티기 · 9 = 타이탄 제자리 밀기 · 10 = 턴 종료 · 11 = 마커 잡기
 
 inline bool in_bounds(V2 t) { return t.x >= 0 && t.x < W && t.y >= 0 && t.y < H; }
 inline int idx(V2 t) { return t.y * W + t.x; } // in_bounds 전제
@@ -51,7 +51,6 @@ inline bool is_box_of(int team, V2 t) {
 	return team == HOME ? t.x < 2 : t.x >= W - 2;
 }
 inline bool is_any_box(V2 t) { return is_box_of(HOME, t) || is_box_of(AWAY, t); }
-inline int end_line_x(int team) { return team == HOME ? 0 : W - 1; }
 // 자기 진영 = 판 절반 (spec 3.2 v5.12 — 배치 자유화). HOME x 0~4 / AWAY x 5~9
 inline bool is_own_half(int team, V2 t) {
 	if (!in_bounds(t))
@@ -98,6 +97,7 @@ struct State {
 	int half = 1;
 	int redeploy = 0;       // 지금 배치가 골·하프타임 뒤 재배치인가 (포지션 그대로)
 	int goal_turn[2] = { 0, 0 }; // 골을 넣은 턴 — 그 반의 몇 번째 턴 (1~30, 0 = 없음). 1:1 판정 (v5.39)
+	int boost_on = 0;       // v5.83: 지금 차례 팀의 부스터가 이번 턴에 부스트를 켰는가 (game_state.gd boost_on · 버퍼 17번 칸)
 	int contest_used = 0;   // v5.79: 이번 턴에 경합이 났는가 — 경합은 한 팀 한 턴에 한 번 (game_state.gd contest_used)
 	int contest_cap() const { return contest_used ? 0 : 1; }
 	int grab[2] = { -1, -1 }; // v5.80 마커 수동 잡기 — 팀마다 그 팀 마커가 붙잡은 적 uid (game_state.gd grab)
