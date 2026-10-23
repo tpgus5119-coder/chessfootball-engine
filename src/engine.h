@@ -75,7 +75,7 @@ struct Player {
 	bool is_placed() const { return placed_order >= 0; }
 	int stat(int key) const; // 기본 3, 포지션 보너스 4 (player_state.gd)
 	int move_range() const { return position == SPRINTER ? 4 : 3; } // v5.15 스프린터만 4칸
-	int dribble_range() const { return 2; } // v5.68: 트릭스터 3칸은 2포인트 특기 (치달 없이 갈 수 있는 거리)
+	int dribble_range() const { return move_range(); } // v5.73: 드리블 = 이동 거리, 치달 없음 (player_state.gd dribble_range)
 	int pass_range() const { return position == LAUNCHER ? 5 : 4; }   // v5.68: 런처 5 (2포인트는 무제한). 마에스트로는 4, 포인트로 스탯만
 	int shot_range() const { return position == CANNON ? 5 : 4; }  // v5.38: 캐논 5
 	int shot_cost() const { return position == QUICK ? 1 : 2; }    // v5.38: 슛 포인트 2, 퀵슈터 1
