@@ -22,8 +22,8 @@ namespace az {
 
 // ---------- 수의 번호 (정책 머리의 출력 칸) ----------
 // 이동·드리블·패스·슛 (4 × 내 5 × 칸 70) · 마에스트로 패스 포인트 0·2 변형 (2 × 5 × 70; 1포인트는 보통 패스 칸) ·
-// 태클·밀기·잡기 (3 × 내 5 × 상대 5) · 태세 5 · 버티기 5 · 턴 종료 1 · 배치 11 × 70 ·
-// 옛 교체 자리 (1+5) × 11 — 앞 5칸을 부스트(v5.83, 내 선수 5)가 쓴다. 망 형식(NA = 3022)은 그대로
+// 태클·밀기·잡기 (3 × 내 5 × 상대 5) · 태세 5 · 버티기 5 · 턴 종료 1 · 배치 슬롯 11 × 70 · 부스트 5 = 2961
+// (2026-10-23 입력 칸을 고치며 망을 새로 시작할 때 옛 교체 자리 66칸을 걷어냈다 — 그 전 NA는 3022)
 constexpr int OFF_TILE = 0;
 constexpr int OFF_PASSC = OFF_TILE + 4 * PER_TEAM * NT;
 constexpr int OFF_TGT = OFF_PASSC + 2 * PER_TEAM * NT;
@@ -31,8 +31,8 @@ constexpr int OFF_STANCE = OFF_TGT + 3 * PER_TEAM * PER_TEAM;   // 태클 · 밀
 constexpr int OFF_HOLD = OFF_STANCE + PER_TEAM;
 constexpr int OFF_END = OFF_HOLD + PER_TEAM;
 constexpr int OFF_PLACE = OFF_END + 1;
-constexpr int OFF_SUB = OFF_PLACE + NN_NPOS * NT;   // 부스트 (v5.83)
-constexpr int NA = OFF_SUB + (1 + PER_TEAM) * NN_NPOS;
+constexpr int OFF_BOOST = OFF_PLACE + POOL_N * NT;   // v5.83
+constexpr int NA = OFF_BOOST + PER_TEAM;
 
 int action_index(const State &s, const Action &a);   // s.turn_team이 두는 팀. 모르는 수면 −1
 

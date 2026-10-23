@@ -48,14 +48,14 @@ int action_index(const State &s, const Action &a) {
 			int me = a.uid - PER_TEAM * team;
 			return me < 0 || me >= PER_TEAM ? -1 : OFF_HOLD + me;
 		}
-		case A_BOOST: {   // v5.83 — 옛 교체 칸 자리를 쓴다 (망 형식 NA는 그대로)
+		case A_BOOST: {   // v5.83
 			int me = a.uid - PER_TEAM * team;
-			return me < 0 || me >= PER_TEAM ? -1 : OFF_SUB + me;
+			return me < 0 || me >= PER_TEAM ? -1 : OFF_BOOST + me;
 		}
 		case A_END:
 			return OFF_END;
 		case A_PLACE: {
-			if (a.uid < 0 || a.uid >= NN_NPOS || !in_bounds(a.dest))
+			if (a.uid < 0 || a.uid >= POOL_N || !in_bounds(a.dest))
 				return -1;
 			return OFF_PLACE + a.uid * NT + flip_tile(a.dest, team);
 		}

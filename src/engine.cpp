@@ -225,8 +225,7 @@ static const Player *player_at(const State &s, V2 t) {
 // v5.68 5대5: 두 명씩 번갈아 놓되 팀당 인원을 다 놓으면 남은 차례는 상대 몫 — F F O O F F O O F O (game_state.gd _team_at)
 
 // 드래프트 풀 (spec 3.2 v5.38) — game_state.gd DRAFT_POOL과 같은 순서여야 한다.
-// 11종 중 10종이 5:5로 나가 **매 경기 1종이 남는다**
-constexpr int POOL_N = 11;
+// 11종 중 10종이 5:5로 나가 **매 경기 1종이 남는다** (POOL_N은 engine.h)
 static const int DRAFT_POOL[POOL_N] = { CANNON, QUICK, MAESTRO, MARKER, TRICKSTER, SPRINTER,
 	TITAN, HUNTER, WALL, BOOSTER, LAUNCHER };
 

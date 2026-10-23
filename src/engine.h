@@ -10,6 +10,7 @@ namespace cf {
 
 constexpr int W = 10, H = 7, NT = W * H;          // board.gd
 constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
+constexpr int POOL_N = 11;                  // 드래프트 풀 종류 수 (game_state.gd DRAFT_POOL — 순서는 engine.cpp)
 constexpr int HALF_TURNS = 60, MAX_TURNS = 120, POINTS_PER_TURN = 2; // game_state.gd (v5.44 — 반마다 팀당 30턴)
 constexpr int BUF_HEAD = 24, // v5.80: 22·23 = 마커 수동 잡기 대상 · v5.79: 21 = contest_used
 	 BUF_LEN = BUF_HEAD + PLAYERS * 6; // 선수당 6칸 (자리 x·y · 배치 순서 · 포지션 · 태세 · 팀) — game_state.gd save_state와 같다

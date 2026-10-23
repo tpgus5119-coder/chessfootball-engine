@@ -41,7 +41,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	}
 	if (s.loose_ball())
 		add(in, NN_OFF_LOOSE + (s.loose_team == team ? 0 : 1) * NT + nn_tile(s.ball_pos, flip));
-	for (int k = 0; k < NN_NPOS - 1; k++)
+	for (int k = 0; k < POOL_N; k++)   // 아무도 안 가진 슬롯 전부 (종전엔 마지막 슬롯이 빠졌다)
 		if (!drafted[k])
 			add(in, NN_OFF_BENCH + k);
 	for (int tm = 0; tm < 2; tm++) {   // v5.80 마커 수동 잡기
@@ -63,7 +63,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[9] = s.turn_team == team;
 	d[10] = float(s.pts) / float(POINTS_PER_TURN);
 	d[11] = kickoff_turn(s);
-	d[12] = float(s.placement_index) / 8.0f;
+	d[12] = float(s.placement_index) / float(PLAYERS);
 	d[13] = s.redeploy != 0;
 	d[14] = float(s.contest_used);   // v5.79: 이번 턴 경합을 썼나 (옛 하프타임 교체 차례 칸 — 교체는 v5.68에 없어졌다)
 	d[15] = s.opener == team;
