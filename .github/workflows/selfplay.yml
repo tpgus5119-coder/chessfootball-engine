@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: build
-        run: c++ -O3 -std=c++17 -march=native tools/gen.cpp src/engine.cpp src/nnue.cpp src/az.cpp -o gen
+        run: c++ -O3 -std=c++17 -march=native -ffp-contract=off tools/gen.cpp src/engine.cpp src/nnue.cpp src/az.cpp -o gen
       - name: champion
         env:
           GH_TOKEN: ${{ github.token }}

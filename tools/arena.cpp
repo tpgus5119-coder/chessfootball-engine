@@ -2,7 +2,7 @@
 //   arena <A> <B> <판수> <탐색횟수> <시드>
 //   A·B = 망 파일 | '-' (첫 세대: 선형 가치 + 균일 정책으로 탐색) | 'mm3' (지금 게임 AI — 손평가 미니맥스 깊이 3. mm2도 됨)
 // 탐색은 잡음 없이(결정론) 둔다. 봇이 결정론이라 같은 개막이면 같은 판 — 그래서 처음 두 번의 드래프트만 무작위로
-// 두고, 판마다 A가 HOME·AWAY, 선공·후공을 번갈아 맡는다 (tools/nn/arena.cpp와 같은 규약)
+// 두고, 판마다 A가 HOME·AWAY, 선공·후공을 번갈아 맡는다
 #include "../src/az.h"
 
 #include <cmath>
@@ -13,7 +13,6 @@
 
 using namespace cf;
 
-static const double LIN_W[6] = { 0.20, 0.30, 0.60, 0.15, 0.50, 0.05 };
 
 struct Side {
 	az::Net net;
@@ -30,7 +29,6 @@ struct Side {
 	bool pick(const State &s, az::Params &prm, Action &a) {
 		if (mm_depth > 0) {
 			bool found = false;
-			g_net = nullptr;
 			a = pick_action(s, mm_depth, LIN_W, found);
 			return found;
 		}
@@ -61,7 +59,6 @@ int main(int argc, char **argv) {
 		int a_team = (g % 2 == 0) ? HOME : AWAY;
 		int first = (g / 2) % 2 == 0 ? HOME : AWAY;
 		State s;
-		s.subs_enabled = 0;   // v5.68: 하프타임 교체 없음 — 실제 게임과 같은 규칙으로 둔다 (2026-10-23 발견: 자가학습만 교체를 켜고 돌았다)
 		new_open_match(s, first);
 		for (int k = 0; k < 2 && s.phase == PLACEMENT; k++) {   // 무작위 개막 두 수
 			std::vector<Action> opts;

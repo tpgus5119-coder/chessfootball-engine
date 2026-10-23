@@ -12,7 +12,7 @@ constexpr int W = 10, H = 7, NT = W * H;          // board.gd
 constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
 constexpr int HALF_TURNS = 60, MAX_TURNS = 120, POINTS_PER_TURN = 2; // game_state.gd (v5.44 — 반마다 팀당 30턴)
 constexpr int BUF_HEAD = 24, // v5.80: 22·23 = 마커 수동 잡기 대상 · v5.79: 21 = contest_used
-	 BUF_LEN = BUF_HEAD + PLAYERS * 6; // v5.57: 선수당 6칸 (마커가 고른 잡기 대상) // v5.38 점수·전후반·재배치·교체 차례 · v5.39 골 턴 · v5.40 콤보 · v5.45 버티기
+	 BUF_LEN = BUF_HEAD + PLAYERS * 6; // 선수당 6칸 (자리 x·y · 배치 순서 · 포지션 · 태세 · 팀) — game_state.gd save_state와 같다
 constexpr int LONG_PASS_MIN = 5;                   // ball_actions.gd (v5.12)
 
 struct V2 {
@@ -28,17 +28,15 @@ constexpr V2 UNSET{ -99, -99 };
 constexpr V2 DIRS[4] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }; // board.gd 순서 고정
 
 enum Team { HOME = 0, AWAY = 1 };
-enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2, SUB = 3 }; // SUB = 하프타임 교체 (v5.38)
-// 크리에이터(9)는 풀에서 빠졌고 7은 폐지된 부스터 자리다 — 번호는 구멍으로 남긴다 (기보·저장 호환).
-// v5.38: 퀵슈터(11) · v5.40: 타워(12 — 캡틴 자리를 이었다)
+enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2, SUB = 3 }; // SUB = 옛 하프타임 교체 (v5.68 폐지 — 번호만 남긴다)
+// 크리에이터(9)는 v5.30에 풀에서 빠졌다 — 번호는 구멍으로 남긴다 (기보·저장 호환). 퀵슈터 11 · 런처 12
 enum Pos { PROSPECT = 0, CANNON = 1, MAESTRO = 2, TRICKSTER = 3, TITAN = 4, MARKER = 5,
 	HUNTER = 6, BOOSTER = 7, WALL = 8, CREATOR = 9, SPRINTER = 10, QUICK = 11, LAUNCHER = 12 };   // v5.68: 12 = 런처 (옛 타워 자리)
 enum Stat { SHT = 0, PAS, DRB, INT_, TKL, PHY };
 // 액션 종류 (GDScript 문자열과 1:1 — minimax_bot.gd ACT_NAME과 같은 순서가 인코딩 계약이다).
-// 자리 3 = 배치 (v5.9). v5.38: 자리 6(골키퍼킥 폐지)을 **하프타임 교체**가 물려받고 8번에 **해제**가 붙었다. v5.59: 8번 해제 폐지 → **마커 수동 잡기**(A_MARK, dest.x = 대상 uid).
-// 교체는 uid −1 = 안 바꿈, 아니면 dest.x = 벤치 슬롯(DRAFT_POOL 인덱스)
+// 6(A_SUB) = 옛 하프타임 교체 자리 (v5.68 폐지 — 열거되지 않는다). 태클·밀기·잡기는 dest.x = 대상 uid
 enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_SUB, A_STANCE, A_HOLD, A_PUSH, A_END, A_GRAB };
-constexpr int N_ACT = 12;   // v5.80: 11 = 마커 수동 잡기   // v5.68: 8 = 버티기(캐논 1포인트, 옛 잡기 자리) · 9 = 제자리 밀기 · 10 = 턴 종료. 잡기 폐지
+constexpr int N_ACT = 12;   // 8 = 캐논 버티기 · 9 = 타이탄 제자리 밀기 · 10 = 턴 종료 · 11 = 마커 잡기 (v5.80)
 
 inline bool in_bounds(V2 t) { return t.x >= 0 && t.x < W && t.y >= 0 && t.y < H; }
 inline int idx(V2 t) { return t.y * W + t.x; } // in_bounds 전제
@@ -74,8 +72,7 @@ struct Player {
 	bool is_placed() const { return placed_order >= 0; }
 	int stat(int key) const; // 기본 3, 포지션 보너스 4 (player_state.gd)
 	int move_range() const { return position == SPRINTER ? 4 : 3; } // v5.15 스프린터만 4칸
-	int dribble_range() const { return move_range(); } // v5.73: 드리블 = 이동 거리, 치달 없음 (player_state.gd dribble_range)
-	int pass_range() const { return position == LAUNCHER ? 5 : 4; }   // v5.68: 런처 5 (2포인트는 무제한). 마에스트로는 4, 포인트로 스탯만
+	int pass_range() const { return position == LAUNCHER ? 5 : 4; }   // 런처 5 (2포인트 롱볼은 6). 마에스트로는 4 — 포인트로 스탯만 산다
 	int shot_range() const { return position == CANNON ? 5 : 4; }  // v5.38: 캐논 5
 	int shot_cost() const { return position == QUICK ? 1 : 2; }    // v5.38: 슛 포인트 2, 퀵슈터 1
 	int tackle_range() const { return 1; }   // v5.68: 헌터 2칸은 2포인트 특기 (legal_tackle_target)
@@ -83,7 +80,7 @@ struct Player {
 	bool space_pass() const { return true; }  // v5.30: 빈 칸 패스는 전원 것이 됐다 (5.4)
 };
 
-// game_state.gd — 경기 중 가변 상태(save_state 버퍼 대상) + 불변 설정(opener·교체 여부·결장)
+// game_state.gd — 경기 중 가변 상태(save_state 버퍼 대상) + 불변 설정(opener·결장)
 struct State {
 	int phase = PLACEMENT;
 	int first_team = HOME;  // 지금 킥오프에서 공 없이 시작하는 팀 (골·후반마다 바뀐다)
@@ -100,15 +97,13 @@ struct State {
 	int score[2] = { 0, 0 };
 	int half = 1;
 	int redeploy = 0;       // 지금 배치가 골·하프타임 뒤 재배치인가 (포지션 그대로)
-	int sub_step = 0;       // 하프타임 교체 차례 (0 = 후반 수비 팀, 1 = 상대)
 	int goal_turn[2] = { 0, 0 }; // 골을 넣은 턴 — 그 반의 몇 번째 턴 (1~30, 0 = 없음). 1:1 판정 (v5.39)
 	int contest_used = 0;   // v5.79: 이번 턴에 경합이 났는가 — 경합은 한 팀 한 턴에 한 번 (game_state.gd contest_used)
 	int contest_cap() const { return contest_used ? 0 : 1; }
 	int grab[2] = { -1, -1 }; // v5.80 마커 수동 잡기 — 팀마다 그 팀 마커가 붙잡은 적 uid (game_state.gd grab)
-	int hold = 0;           // 타워 버티기 (v5.45 — game_state.gd hold): 0 가능 · 1 버티는 중 · 2 버틴 뒤 −1 · 3 먼저 드리블함
+	int hold = 0;           // 캐논 버티기 (game_state.gd hold): 0 가능 · 1 버티는 중 · 2 버틴 뒤(그 공으로는 다시 못 버팀)함
 	// 설정 (버퍼 제외 — 경기 중 불변. set_config로 넣는다)
 	int opener = HOME;      // 전반 선공
-	int subs_enabled = 0;   // v5.68: 하프타임 교체 없음 (10종이 5:5로 다 나간다)
 	int absent_mask = 0;    // 결장 선수 (컵 부상 — uid 비트)
 	Player players[PLAYERS];
 
@@ -149,7 +144,6 @@ struct State {
 	bool clock();
 	bool decided();
 	int half_turn() const { return turn_count - (half - 1) * HALF_TURNS; }
-	void next_sub();
 	void save_buf(int *buf) const;   // save_state와 같은 배치 (21 + 5/선수)
 	void load_buf(const int *buf);
 };
@@ -170,20 +164,20 @@ int pool_slot(int position);          // 드래프트 슬롯 (풀에 없는 포�
 bool kickoff_turn(const State &s);    // actions.gd is_kickoff_turn
 int grab_target_of(const State &s, int team);   // v5.80 마커 수동 잡기 — 지금 붙잡힌 적 (−1 = 없음)
 
-// ai/eval.gd + minimax_bot.gd. 신경망(g_net — nnue.h)이 실려 있으면 evaluate는 그 망을 쓰고,
-// 드래프트·배치·교체는 한 수 앞(그 수를 둔 뒤의 평가)만 본다 — 갈래가 수백 개라 깊이 읽을 수 없고, 망이 그 판을 이미 읽는다
+// ai/eval.gd + minimax_bot.gd — 손평가(선형) + 미니맥스
 void features(const State &s, int team, double f[6]);
 double evaluate(const State &s, int team, const double w[6]);
 // 미니맥스 선택 (실행하지 않는다). found=false면 합법 수 없음. best_out = 고른 수의 탐색 점수(둔 팀 관점)
 Action pick_action(const State &s, int depth, const double w[6], bool &found, double *best_out = nullptr);
-constexpr double NN_SCALE = 1000.0;   // 망의 −1…+1 → 끝난 판(±W_GOAL 10000)보다 늘 작게
+// 손평가 가중치 — ai/eval.gd DEFAULT와 같은 값 한 벌 (게임·알파제로 첫 세대 가치·아레나·균형 실측이 같이 쓴다)
+constexpr double LIN_W[6] = { 0.20, 0.30, 0.60, 0.15, 0.50, 0.05 };
 
 // ---------- 자가대전 공장 (simulator.gd run_match의 C++판) ----------
 // 난수는 **배치·엔트리 셔플에만** 쓴다 (게임 로직 난수 금지 — CLAUDE.md. GDScript 하네스와 같은 예외).
 // 시드 고정 = 완전 재현. record_path가 비어 있지 않으면 학습용 기보(아래 형식)를 쓴다.
 //   기보 v2 (int32 LE): [매직 0x43465350, 버전 2] 다음 경기마다
 //   [opener, winner(−1 무승부), HOME골, AWAY골, n_moves] + n_moves × [상태버퍼 60 + 액션 4(t,uid,dx,dy)]
-//   배치(처음·재배치)는 하네스 난수라 기보에 안 넣는다 — 봇이 둔 수(경기·교체)만 남긴다
+//   배치(처음·재배치)는 하네스 난수라 기보에 안 넣는다 — 봇이 둔 경기 중 수만 남긴다
 struct SelfplayStats {
 	int matches = 0, draws = 0, home_wins = 0, away_wins = 0, first_wins = 0, second_wins = 0;
 	int goals = 0;
@@ -196,7 +190,7 @@ void selfplay(int games, int depth, unsigned long long seed, int cap, const doub
 // 배치 단계를 하네스 난수로 채운다 (처음 드래프트·재배치 공용). 배치 단계가 아니면 아무것도 안 한다
 void random_placement(State &s, unsigned long long &rng_state);
 
-// 새 경기 1판 준비: 설정 보존 + 10종 중 8종 무작위 드래프트·배치 (하네스 난수)
+// 새 경기 1판 준비: 설정 보존 + 11종 중 10종 무작위 드래프트·배치 (하네스 난수)
 void new_random_match(State &s, int first, unsigned long long seed);
 // 드래프트 전 빈 판 (드래프트·배치도 봇이 둔다 — 신경망 학습·아레나)
 void new_open_match(State &s, int first);

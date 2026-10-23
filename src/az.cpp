@@ -8,8 +8,7 @@
 namespace cf {
 namespace az {
 
-// 첫 세대(망 없음)의 가치 = 지금 게임의 선형 평가 (ai/eval.gd DEFAULT 가중치 — tools/nn/common.h LIN_W와 같다)
-static const double LIN_W[6] = { 0.20, 0.30, 0.60, 0.15, 0.50, 0.05 };
+// 첫 세대(망 없음)의 가치 = 지금 게임의 선형 평가 (engine.h LIN_W)
 
 static inline int flip_tile(V2 t, int team) {
 	return t.y * W + (team == AWAY ? W - 1 - t.x : t.x);
@@ -55,13 +54,6 @@ int action_index(const State &s, const Action &a) {
 			if (a.uid < 0 || a.uid >= NN_NPOS || !in_bounds(a.dest))
 				return -1;
 			return OFF_PLACE + a.uid * NT + flip_tile(a.dest, team);
-		}
-		case A_SUB: {
-			int who = a.uid == -1 ? 0 : 1 + (a.uid - PER_TEAM * team);
-			int slot = a.uid == -1 ? 0 : a.dest.x;
-			if (who < 0 || who > PER_TEAM || slot < 0 || slot >= NN_NPOS)
-				return -1;
-			return OFF_SUB + who * NN_NPOS + slot;
 		}
 	}
 	return -1;
@@ -110,9 +102,17 @@ bool Net::load_mem(const unsigned char *p, size_t n) {
 			take(b2.data(), 4 * b2.size()) && take(wv.data(), 4 * wv.size()) && take(&bv, 4) &&
 			take(wa.data(), 4 * wa.size()) && take(&ba, 4) && take(wp.data(), 4 * wp.size()) &&
 			take(bp.data(), 4 * bp.size());
-	if (!ok)
+	if (!ok) {
 		h1 = h2 = 0;
-	return ok;
+		return false;
+	}
+	// 정책 머리를 **수마다 한 줄**(NA×h2)로 뒤집어 둔다 — 파일은 h2×NA라 수 하나를 셀 때 NA칸씩 건너뛰며 읽었다 (캐시 낭비)
+	std::vector<float> t(wp.size());
+	for (int k = 0; k < h2; k++)
+		for (int a = 0; a < NA; a++)
+			t[size_t(a) * h2 + k] = wp[size_t(k) * NA + a];
+	wp.swap(t);
+	return true;
 }
 
 static void forward(const Net &net, const NetInput &in, std::vector<float> &b) {
@@ -172,8 +172,9 @@ void evaluate(const Net &net, const State &s, const std::vector<Action> &acts, E
 		if (ai < 0)
 			continue;
 		float l = net.bp[ai];
+		const float *row = &net.wp[size_t(ai) * h2];
 		for (int k = 0; k < h2; k++)
-			l += b[k] * net.wp[size_t(k) * NA + ai];
+			l += b[k] * row[k];
 		out.logits[i] = l;
 	}
 }
@@ -241,11 +242,12 @@ struct Tree {
 		return int(nodes.size()) - 1;
 	}
 
-	double sigma(const Node &nd, double q) const {
+	// σ(q) = (c_visit + 최대 방문 수)·c_scale·q — 앞의 배율은 마디마다 한 번만 센다 (수마다 다시 세면 k²)
+	double sigma_scale(const Node &nd) const {
 		int maxn = 0;
 		for (int x : nd.n)
 			maxn = std::max(maxn, x);
-		return (p.c_visit + maxn) * p.c_scale * q;
+		return (p.c_visit + maxn) * p.c_scale;
 	}
 
 	// 완성된 Q (Gumbel 논문 식): 방문한 수는 평균값, 안 한 수는 v_mix
@@ -283,8 +285,9 @@ struct Tree {
 		size_t k = nd.acts.size();
 		pi.resize(k);
 		double mx = -1e30;
+		const double sc = sigma_scale(nd);
 		for (size_t i = 0; i < k; i++) {
-			pi[i] = double(nd.logits[i]) + sigma(nd, q[i]);
+			pi[i] = double(nd.logits[i]) + sc * q[i];
 			mx = std::max(mx, pi[i]);
 		}
 		double sum = 0.0;
@@ -366,13 +369,6 @@ Result search(const State &s0, const Net &net, const Params &p) {
 		return res;
 	}
 	const size_t k = r0.acts.size();
-	for (size_t i = 0; i < k; i++) {   // 성격 손잡이 — 뿌리에서만
-		const Action &a = r0.acts[i];
-		if (a.t >= 0 && a.t < N_ACT)
-			r0.logits[i] += float(p.kind_bias[a.t]);
-		if (a.t == A_PLACE && a.uid >= 0 && a.uid < NN_NPOS)
-			r0.logits[i] += float(p.slot_bias[a.uid]);
-	}
 	Rng rng(p.seed);
 	std::vector<double> g(k, 0.0);
 	if (p.gumbel)
@@ -401,9 +397,10 @@ Result search(const State &s0, const Net &net, const Params &p) {
 				}
 			phases = std::max(1, phases - 1);
 			Node &r = tree.nodes[root];
+			const double sc = tree.sigma_scale(r);
 			auto score = [&](int a) {
 				double q = r.n[a] > 0 ? r.w[a] / r.n[a] : 0.0;
-				return g[a] + r.logits[a] + tree.sigma(r, q);
+				return g[a] + r.logits[a] + sc * q;
 			};
 			std::sort(cand.begin(), cand.end(), [&](int a, int b) { return score(a) > score(b); });
 			if (cand.size() > 1)
@@ -464,7 +461,6 @@ void selfplay(const Net &net, int games, int sims, unsigned long long seed, int 
 	for (int g = 0; g < games; g++) {
 		Rng rng(seed * 1000003ull + g);
 		State s;
-		s.subs_enabled = 0;   // v5.68: 하프타임 교체 없음 — 실제 게임과 같은 규칙으로 둔다 (2026-10-23 발견: 자가학습만 교체를 켜고 돌았다)
 		new_open_match(s, g % 2 == 0 ? HOME : AWAY);
 		recs.clear();
 		mover.clear();

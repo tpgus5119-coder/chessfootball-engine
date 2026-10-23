@@ -7,10 +7,6 @@
 
 namespace cf {
 
-const Net *g_net = nullptr;
-double g_net_mix = -1.0;
-bool g_root_setup = false;
-
 static inline int nn_tile(V2 t, bool flip) {
 	return t.y * W + (flip ? W - 1 - t.x : t.x);
 }
@@ -57,7 +53,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	float *d = in.dense;
 	d[0] = s.phase == PLACEMENT;
 	d[1] = s.phase == PLAY;
-	d[2] = s.phase == SUB;
+	d[2] = 0.0f;   // 옛 하프타임 교체 단계 (v5.68 폐지) — 망 입력 칸 수를 안 바꾸려고 자리만 남긴다
 	d[3] = s.half == 2;
 	d[4] = float(std::max(0, std::min(s.half_turn(), HALF_TURNS))) / float(HALF_TURNS);
 	d[5] = float(s.score[team]);
@@ -75,78 +71,6 @@ void net_input(const State &s, int team, NetInput &in) {
 	features(s, team, f);
 	for (int k = 0; k < 6; k++)
 		d[16 + k] = float(f[k]);
-}
-
-bool Net::load(const char *path) {
-	FILE *f = fopen(path, "rb");
-	if (!f)
-		return false;
-	std::vector<unsigned char> buf;
-	unsigned char tmp[65536];
-	size_t k;
-	while ((k = fread(tmp, 1, sizeof(tmp), f)) > 0)
-		buf.insert(buf.end(), tmp, tmp + k);
-	fclose(f);
-	return load_mem(buf.data(), buf.size());
-}
-
-bool Net::load_mem(const unsigned char *p, size_t n) {
-	size_t at = 0;
-	auto take = [&](void *dst, size_t bytes) {
-		if (at + bytes > n)
-			return false;
-		std::memcpy(dst, p + at, bytes);
-		at += bytes;
-		return true;
-	};
-	int head[6];
-	if (!take(head, sizeof(head)) || head[0] != 0x4E4E4643 || head[1] != 1 || head[2] != NN_SPARSE ||
-			head[3] != NN_DENSE || head[4] <= 0 || head[4] > 512 || head[5] <= 0 || head[5] > 128)
-		return false;
-	h1 = head[4];
-	h2 = head[5];
-	w1.resize(size_t(NN_SPARSE + NN_DENSE) * h1);
-	b1.resize(h1);
-	w2.resize(size_t(h1) * h2);
-	b2.resize(h2);
-	w3.resize(h2);
-	return take(w1.data(), 4 * w1.size()) && take(b1.data(), 4 * b1.size()) && take(w2.data(), 4 * w2.size()) &&
-			take(b2.data(), 4 * b2.size()) && take(w3.data(), 4 * w3.size()) && take(&b3, 4);
-}
-
-float Net::eval(const NetInput &in) const {
-	float a[512];
-	float b[128];
-	std::memcpy(a, b1.data(), sizeof(float) * h1);
-	for (int i = 0; i < in.n; i++) {
-		const float *row = &w1[size_t(in.idx[i]) * h1];
-		for (int j = 0; j < h1; j++)
-			a[j] += row[j];
-	}
-	for (int k = 0; k < NN_DENSE; k++) {
-		float v = in.dense[k];
-		if (v == 0.0f)
-			continue;
-		const float *row = &w1[size_t(NN_SPARSE + k) * h1];
-		for (int j = 0; j < h1; j++)
-			a[j] += v * row[j];
-	}
-	for (int j = 0; j < h1; j++)
-		a[j] = std::min(std::max(a[j], 0.0f), 1.0f); // 자른 ReLU (NNUE)
-	for (int k = 0; k < h2; k++)
-		b[k] = b2[k];
-	for (int j = 0; j < h1; j++) {
-		float v = a[j];
-		if (v == 0.0f)
-			continue;
-		const float *row = &w2[size_t(j) * h2];
-		for (int k = 0; k < h2; k++)
-			b[k] += v * row[k];
-	}
-	float o = b3;
-	for (int k = 0; k < h2; k++)
-		o += std::min(std::max(b[k], 0.0f), 1.0f) * w3[k];
-	return std::tanh(o);
 }
 
 } // namespace cf
