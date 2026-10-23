@@ -11,7 +11,7 @@ namespace cf {
 constexpr int W = 10, H = 7, NT = W * H;          // board.gd
 constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
 constexpr int HALF_TURNS = 60, MAX_TURNS = 120, POINTS_PER_TURN = 2; // game_state.gd (v5.44 — 반마다 팀당 30턴)
-constexpr int BUF_HEAD = 22, // v5.79: 21번 = contest_used (v5.74~v5.78은 21칸)
+constexpr int BUF_HEAD = 24, // v5.80: 22·23 = 마커 수동 잡기 대상 · v5.79: 21 = contest_used
 	 BUF_LEN = BUF_HEAD + PLAYERS * 6; // v5.57: 선수당 6칸 (마커가 고른 잡기 대상) // v5.38 점수·전후반·재배치·교체 차례 · v5.39 골 턴 · v5.40 콤보 · v5.45 버티기
 constexpr int LONG_PASS_MIN = 5;                   // ball_actions.gd (v5.12)
 
@@ -37,8 +37,8 @@ enum Stat { SHT = 0, PAS, DRB, INT_, TKL, PHY };
 // 액션 종류 (GDScript 문자열과 1:1 — minimax_bot.gd ACT_NAME과 같은 순서가 인코딩 계약이다).
 // 자리 3 = 배치 (v5.9). v5.38: 자리 6(골키퍼킥 폐지)을 **하프타임 교체**가 물려받고 8번에 **해제**가 붙었다. v5.59: 8번 해제 폐지 → **마커 수동 잡기**(A_MARK, dest.x = 대상 uid).
 // 교체는 uid −1 = 안 바꿈, 아니면 dest.x = 벤치 슬롯(DRAFT_POOL 인덱스)
-enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_SUB, A_STANCE, A_HOLD, A_PUSH, A_END };
-constexpr int N_ACT = 11;   // v5.68: 8 = 버티기(캐논 1포인트, 옛 잡기 자리) · 9 = 제자리 밀기 · 10 = 턴 종료. 잡기 폐지
+enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_SUB, A_STANCE, A_HOLD, A_PUSH, A_END, A_GRAB };
+constexpr int N_ACT = 12;   // v5.80: 11 = 마커 수동 잡기   // v5.68: 8 = 버티기(캐논 1포인트, 옛 잡기 자리) · 9 = 제자리 밀기 · 10 = 턴 종료. 잡기 폐지
 
 inline bool in_bounds(V2 t) { return t.x >= 0 && t.x < W && t.y >= 0 && t.y < H; }
 inline int idx(V2 t) { return t.y * W + t.x; } // in_bounds 전제
@@ -104,6 +104,7 @@ struct State {
 	int goal_turn[2] = { 0, 0 }; // 골을 넣은 턴 — 그 반의 몇 번째 턴 (1~30, 0 = 없음). 1:1 판정 (v5.39)
 	int contest_used = 0;   // v5.79: 이번 턴에 경합이 났는가 — 경합은 한 팀 한 턴에 한 번 (game_state.gd contest_used)
 	int contest_cap() const { return contest_used ? 0 : 1; }
+	int grab[2] = { -1, -1 }; // v5.80 마커 수동 잡기 — 팀마다 그 팀 마커가 붙잡은 적 uid (game_state.gd grab)
 	int hold = 0;           // 타워 버티기 (v5.45 — game_state.gd hold): 0 가능 · 1 버티는 중 · 2 버틴 뒤 −1 · 3 먼저 드리블함
 	// 설정 (버퍼 제외 — 경기 중 불변. set_config로 넣는다)
 	int opener = HOME;      // 전반 선공
@@ -116,6 +117,8 @@ struct State {
 	void mark_acted(int uid) {
 		acted_mask |= 1 << uid;
 		players[uid].stance = 0;
+		if (players[uid].position == MARKER)
+			grab[players[uid].team] = -1;   // v5.80: 마커가 다른 행동을 하면 수동 잡기가 풀린다
 	}
 	void set_ball_owner(int uid) {
 		if (uid != ball_owner_uid) // v5.68: 버티기는 캐논의 1포인트 행동 — 공이 바뀌면 면역 끝 (game_state.gd set_ball_owner)
@@ -165,6 +168,7 @@ bool apply_action(State &s, const Action &a);
 // 신경망 입력(nnue.cpp)이 쓰는 규칙 질의
 int pool_slot(int position);          // 드래프트 슬롯 (풀에 없는 포지션 = −1)
 bool kickoff_turn(const State &s);    // actions.gd is_kickoff_turn
+int grab_target_of(const State &s, int team);   // v5.80 마커 수동 잡기 — 지금 붙잡힌 적 (−1 = 없음)
 
 // ai/eval.gd + minimax_bot.gd. 신경망(g_net — nnue.h)이 실려 있으면 evaluate는 그 망을 쓰고,
 // 드래프트·배치·교체는 한 수 앞(그 수를 둔 뒤의 평가)만 본다 — 갈래가 수백 개라 깊이 읽을 수 없고, 망이 그 판을 이미 읽는다

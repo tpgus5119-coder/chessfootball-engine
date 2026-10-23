@@ -24,7 +24,8 @@ constexpr int NN_OFF_BALL = NN_OFF_STANCE + 2 * NT; // 공 임자가 선 칸 (re
 constexpr int NN_OFF_LOOSE = NN_OFF_BALL + 2 * NT;  // 루즈볼 칸 (rel = 놓은 팀)
 constexpr int NN_OFF_UNPLACED = NN_OFF_LOOSE + 2 * NT; // 아직 판에 없는 선수 (rel·NPOS + slot)
 constexpr int NN_OFF_BENCH = NN_OFF_UNPLACED + 2 * NN_NPOS; // 아무도 안 가진 드래프트 슬롯
-constexpr int NN_SPARSE = NN_OFF_BENCH + NN_NPOS;
+constexpr int NN_OFF_GRAB = NN_OFF_BENCH + NN_NPOS; // v5.80 마커에게 붙잡힌 선수가 선 칸 (rel = 붙잡힌 선수의 팀)
+constexpr int NN_SPARSE = NN_OFF_GRAB + 2 * NT;
 constexpr int NN_DENSE = 22;   // 전역 16 + 손으로 만든 전술 단서 6 (eval.gd features — 슛 각 등. 망이 그 위에 더 배운다)
 constexpr int NN_MAX_ACTIVE = 48;
 

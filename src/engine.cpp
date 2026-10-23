@@ -62,6 +62,7 @@ void State::begin_redeploy(int no_ball_team) {
 	placement_index = 0;
 	pts = 0;
 	contest_used = 0;
+	grab[0] = grab[1] = -1;
 	turn_actions = 0;
 	acted_mask = 0;
 	skip_empty_slots(*this);
@@ -118,6 +119,7 @@ void State::end_turn() {
 	turn_team = opponent(turn_team);
 	pts = POINTS_PER_TURN;
 	contest_used = 0;
+	grab[turn_team] = -1;   // v5.80: 수동 잡기는 상대 차례 동안만
 	turn_actions = 0;
 	acted_mask = 0;
 	for (Player &p : players) // 수비 태세는 한 턴만 — 내 차례가 돌아오면 풀린다 (v5.65, game_state.gd end_turn)
@@ -167,6 +169,8 @@ void State::save_buf(int *buf) const { // save_state와 같은 배치
 	buf[19] = goal_turn[1];
 	buf[20] = hold;
 	buf[21] = contest_used;
+	buf[22] = grab[0];
+	buf[23] = grab[1];
 	int i = BUF_HEAD;
 	for (int u = 0; u < PLAYERS; u++) {
 		buf[i] = players[u].pos.x;
@@ -201,6 +205,8 @@ void State::load_buf(const int *buf) {
 	goal_turn[1] = buf[19];
 	hold = buf[20];
 	contest_used = buf[21];
+	grab[0] = buf[22];
+	grab[1] = buf[23];
 	int i = BUF_HEAD;
 	for (int u = 0; u < PLAYERS; u++) {
 		players[u].pos = { buf[i], buf[i + 1] };
@@ -409,6 +415,24 @@ static int marker_target(const State &s, const Player &m) {
 	return best;
 }
 
+// 그 팀 마커가 지금 실제로 붙잡고 있는 적 (game_state.gd grab_target_of): 떨어졌거나 마커가 공을 쥐었거나 대상이 버티면 −1
+int grab_target_of(const State &s, int team) {
+	int t = s.grab[team];
+	if (t < 0)
+		return -1;
+	const Player &q = s.players[t];
+	if (!q.is_placed() || (s.hold == 1 && s.ball_owner_uid == t))
+		return -1;
+	for (const Player &m : s.players)
+		if (m.team == team && m.position == MARKER && m.is_placed() && m.uid != s.ball_owner_uid && manhattan(m.pos, q.pos) == 1)
+			return t;
+	return -1;
+}
+
+static bool is_pinned(const State &s, const Player &p) {
+	return grab_target_of(s, opponent(p.team)) == p.uid;
+}
+
 static int marker_debuff(const State &s, const Player &p) {
 	if (s.hold == 1 && p.uid == s.ball_owner_uid)
 		return 0; // 버티는 캐논은 잡히지 않는다 (v5.45 · v5.68)
@@ -416,8 +440,11 @@ static int marker_debuff(const State &s, const Player &p) {
 	for (const V2 &d : DIRS) {
 		const Player *q = player_at(s, p.pos + d);
 		// v5.68: 붙은 적 전원 −1 (공을 가진 마커는 못 잡는다 v5.46). 비스택 — contest.gd marker_debuff
-		if (q && q->team != p.team && q->position == MARKER && q->uid != s.ball_owner_uid)
-			n++;
+		if (q && q->team != p.team && q->position == MARKER && q->uid != s.ball_owner_uid) {
+			int gt = grab_target_of(s, q->team);   // v5.80: 수동으로 붙잡았으면 그 한 명만
+			if (gt == -1 || gt == p.uid)
+				n++;
+		}
 	}
 	return std::min(n, 1);
 }
@@ -773,7 +800,7 @@ static bool can_act(const State &s, const Player &p) {
 
 // 이동 가능 (actions.gd _can_move): 태세 중에도 옮길 수 있고 옮기면 풀린다 (spec 5.12 v5.59 — 해제 액션 폐지)
 static bool can_move(const State &s, const Player &p) {
-	return can_act(s, p) && s.ball_owner_uid != p.uid && !is_kickoff_turn(s);
+	return can_act(s, p) && s.ball_owner_uid != p.uid && !is_kickoff_turn(s) && !is_pinned(s, p);
 }
 
 // v5.51: 공을 뺏겨도 턴은 안 끝난다 — 포인트가 0일 때만 (actions.gd _after_action과 같다)
@@ -887,6 +914,38 @@ static int legal_pushes(const State &s, const Player &p, int out[4]) {
 			out[n++] = q->uid;   // v5.71: 박스 안 선수도 밀린다
 	}
 	return n;
+}
+
+// 마커 수동 잡기 (actions.gd legal_grabs · do_grab — v5.80)
+static int legal_grabs(const State &s, const Player &p, int out[4]) {
+	int n = 0;
+	if (p.position != MARKER || !can_act(s, p) || s.ball_owner_uid == p.uid || is_kickoff_turn(s))
+		return 0;
+	int cur = grab_target_of(s, p.team);
+	for (const V2 &d : DIRS) {
+		const Player *q = player_at(s, p.pos + d);
+		if (q && q->team != p.team && q->uid != cur && !(s.hold == 1 && q->uid == s.ball_owner_uid))
+			out[n++] = q->uid;
+	}
+	return n;
+}
+
+static void after_action(State &s, int);
+static bool do_grab(State &s, int uid, int target_uid) {
+	int t[4];
+	int n = legal_grabs(s, s.players[uid], t);
+	bool ok = false;
+	for (int i = 0; i < n; i++)
+		ok = ok || t[i] == target_uid;
+	if (!ok)
+		return false;
+	int pre_bt = s.ball_team();
+	s.turn_actions += 1;
+	s.pts -= 1;
+	s.mark_acted(uid);
+	s.grab[s.players[uid].team] = target_uid;
+	after_action(s, pre_bt);
+	return true;
 }
 
 static bool do_push(State &s, int uid, int target_uid) {
@@ -1059,6 +1118,8 @@ static bool do_move_to(State &s, int uid, V2 dest) {
 }
 
 static bool may_dribble(const State &s, const Player &p) {
+	if (is_pinned(s, p))
+		return false;   // v5.80: 붙잡힌 선수는 드리블도 못 한다
 	if (s.ball_owner_uid == p.uid)
 		return true;
 	return is_kickoff_turn(s) && p.team == s.turn_team;
@@ -1570,6 +1631,10 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 			int pn = legal_pushes(s, q, pt);   // v5.41 제자리 밀기 — 태클 바로 뒤 (action_space.gd와 같은 자리)
 			for (int i = 0; i < pn; i++)
 				out.push_back({ A_PUSH, u, { pt[i], 0 } });
+			int gt[4];
+			int gn = legal_grabs(s, q, gt);   // v5.80 마커 수동 잡기 — 밀기 바로 뒤 (action_space.gd와 같은 자리)
+			for (int i = 0; i < gn; i++)
+				out.push_back({ A_GRAB, u, { gt[i], 0 } });
 		}
 		const Player *ba = ball_actor(s, u, true);
 		if (ba) { // legal_passes — ctx.dist 삽입 순서대로. v5.12: 아군이 서 있는 칸만
@@ -1650,6 +1715,8 @@ bool apply_action(State &s, const Action &a) {
 			return do_hold(s, a.uid);
 		case A_PUSH:
 			return do_push(s, a.uid, a.dest.x);
+		case A_GRAB:
+			return do_grab(s, a.uid, a.dest.x);
 		case A_END:
 			return do_end_turn(s);
 	}
@@ -1801,7 +1868,7 @@ double evaluate(const State &s, int team, const double w[6]) {
 // 탐색 순서 (Act 인덱스 → ORDER 값): 슛0 태클1 드리블2 패스3 이동4 수비5 잡기6 배치7 교체8
 // — minimax_bot.gd ORDER와 동일. 좋은 수를 먼저 보면 알파베타 가지치기가 더 많이 잘라낸다.
 // 배치·교체가 맨 뒤인 이유: 그 단계에서는 다른 액션이 아예 없어 순서가 의미 없다
-static const int ORDER_OF[N_ACT] = { 4, 2, 1, 7, 3, 0, 8, 5, 5, 1, 9 };   // v5.68: 버티기 = 수비 칸 · 턴 종료 맨 끝 (minimax_bot.gd ORDER)
+static const int ORDER_OF[N_ACT] = { 4, 2, 1, 7, 3, 0, 8, 5, 5, 1, 9, 5 };   // v5.80 잡기 = 수비 칸   // v5.68: 버티기 = 수비 칸 · 턴 종료 맨 끝 (minimax_bot.gd ORDER)
 constexpr int N_BUCKET = 10;
 
 static void ordered(std::vector<Action> &opts) {
@@ -1876,6 +1943,7 @@ static void reset_match(State &s, int first) {
 	s.winner = -1;
 	s.sub_step = 0;
 	s.contest_used = 0;
+	s.grab[0] = s.grab[1] = -1;
 	for (int u = 0; u < PLAYERS; u++) {
 		s.players[u] = Player{};
 		s.players[u].uid = u;

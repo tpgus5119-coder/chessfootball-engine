@@ -48,6 +48,11 @@ void net_input(const State &s, int team, NetInput &in) {
 	for (int k = 0; k < NN_NPOS - 1; k++)
 		if (!drafted[k])
 			add(in, NN_OFF_BENCH + k);
+	for (int tm = 0; tm < 2; tm++) {   // v5.80 마커 수동 잡기
+		int gt = grab_target_of(s, tm);
+		if (gt != -1)
+			add(in, NN_OFF_GRAB + (s.players[gt].team == team ? 0 : 1) * NT + nn_tile(s.players[gt].pos, flip));
+	}
 	const int opp = opponent(team);
 	float *d = in.dense;
 	d[0] = s.phase == PLACEMENT;

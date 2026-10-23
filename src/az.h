@@ -28,7 +28,7 @@ namespace az {
 constexpr int OFF_TILE = 0;
 constexpr int OFF_PASSC = OFF_TILE + 4 * PER_TEAM * NT;
 constexpr int OFF_TGT = OFF_PASSC + 2 * PER_TEAM * NT;
-constexpr int OFF_STANCE = OFF_TGT + 2 * PER_TEAM * PER_TEAM;
+constexpr int OFF_STANCE = OFF_TGT + 3 * PER_TEAM * PER_TEAM;   // 태클 · 밀기 · 잡기(v5.80)
 constexpr int OFF_HOLD = OFF_STANCE + PER_TEAM;
 constexpr int OFF_END = OFF_HOLD + PER_TEAM;
 constexpr int OFF_PLACE = OFF_END + 1;

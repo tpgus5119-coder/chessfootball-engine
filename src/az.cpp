@@ -32,8 +32,9 @@ int action_index(const State &s, const Action &a) {
 			return OFF_TILE + (kind * PER_TEAM + me) * NT + flip_tile(a.dest, team);
 		}
 		case A_TACKLE:
-		case A_PUSH: {
-			int kind = a.t == A_TACKLE ? 0 : 1;
+		case A_PUSH:
+		case A_GRAB: {
+			int kind = a.t == A_TACKLE ? 0 : a.t == A_PUSH ? 1 : 2;
 			int me = a.uid - PER_TEAM * team;
 			int tg = a.dest.x - PER_TEAM * opp;
 			if (me < 0 || me >= PER_TEAM || tg < 0 || tg >= PER_TEAM)
