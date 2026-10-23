@@ -1878,7 +1878,7 @@ void selfplay(int games, int depth, unsigned long long seed, int cap, const doub
 	std::vector<int> moves; // 이번 경기 기보: n_moves × (BUF_LEN + 4)
 	for (int g = 0; g < games; g++) {
 		State s;
-		s.subs_enabled = 1;
+		s.subs_enabled = 0;   // v5.68: 하프타임 교체 없음 — 실제 게임과 같은 규칙으로 둔다 (2026-10-23 발견: 자가학습만 교체를 켜고 돌았다)
 		reset_match(s, g % 2 == 0 ? HOME : AWAY);
 		moves.clear();
 		int guard = 0;

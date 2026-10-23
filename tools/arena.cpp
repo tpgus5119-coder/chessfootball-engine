@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
 		int a_team = (g % 2 == 0) ? HOME : AWAY;
 		int first = (g / 2) % 2 == 0 ? HOME : AWAY;
 		State s;
-		s.subs_enabled = 1;
+		s.subs_enabled = 0;   // v5.68: 하프타임 교체 없음 — 실제 게임과 같은 규칙으로 둔다 (2026-10-23 발견: 자가학습만 교체를 켜고 돌았다)
 		new_open_match(s, first);
 		for (int k = 0; k < 2 && s.phase == PLACEMENT; k++) {   // 무작위 개막 두 수
 			std::vector<Action> opts;

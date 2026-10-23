@@ -463,7 +463,7 @@ void selfplay(const Net &net, int games, int sims, unsigned long long seed, int 
 	for (int g = 0; g < games; g++) {
 		Rng rng(seed * 1000003ull + g);
 		State s;
-		s.subs_enabled = 1;
+		s.subs_enabled = 0;   // v5.68: 하프타임 교체 없음 — 실제 게임과 같은 규칙으로 둔다 (2026-10-23 발견: 자가학습만 교체를 켜고 돌았다)
 		new_open_match(s, g % 2 == 0 ? HOME : AWAY);
 		recs.clear();
 		mover.clear();
