@@ -11,7 +11,7 @@ namespace cf {
 constexpr int W = 10, H = 7, NT = W * H;          // board.gd
 constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
 constexpr int HALF_TURNS = 60, MAX_TURNS = 120, POINTS_PER_TURN = 2; // game_state.gd (v5.44 — 반마다 팀당 30턴)
-constexpr int BUF_HEAD = 21, // v5.74: free_used 칸 제거
+constexpr int BUF_HEAD = 22, // v5.79: 21번 = contest_used (v5.74~v5.78은 21칸)
 	 BUF_LEN = BUF_HEAD + PLAYERS * 6; // v5.57: 선수당 6칸 (마커가 고른 잡기 대상) // v5.38 점수·전후반·재배치·교체 차례 · v5.39 골 턴 · v5.40 콤보 · v5.45 버티기
 constexpr int LONG_PASS_MIN = 5;                   // ball_actions.gd (v5.12)
 
@@ -102,6 +102,8 @@ struct State {
 	int redeploy = 0;       // 지금 배치가 골·하프타임 뒤 재배치인가 (포지션 그대로)
 	int sub_step = 0;       // 하프타임 교체 차례 (0 = 후반 수비 팀, 1 = 상대)
 	int goal_turn[2] = { 0, 0 }; // 골을 넣은 턴 — 그 반의 몇 번째 턴 (1~30, 0 = 없음). 1:1 판정 (v5.39)
+	int contest_used = 0;   // v5.79: 이번 턴에 경합이 났는가 — 경합은 한 팀 한 턴에 한 번 (game_state.gd contest_used)
+	int contest_cap() const { return contest_used ? 0 : 1; }
 	int hold = 0;           // 타워 버티기 (v5.45 — game_state.gd hold): 0 가능 · 1 버티는 중 · 2 버틴 뒤 −1 · 3 먼저 드리블함
 	// 설정 (버퍼 제외 — 경기 중 불변. set_config로 넣는다)
 	int opener = HOME;      // 전반 선공

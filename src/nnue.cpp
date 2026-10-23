@@ -64,7 +64,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[11] = kickoff_turn(s);
 	d[12] = float(s.placement_index) / 8.0f;
 	d[13] = s.redeploy != 0;
-	d[14] = float(s.sub_step) / 2.0f;
+	d[14] = float(s.contest_used);   // v5.79: 이번 턴 경합을 썼나 (옛 하프타임 교체 차례 칸 — 교체는 v5.68에 없어졌다)
 	d[15] = s.opener == team;
 	double f[6];
 	features(s, team, f);
