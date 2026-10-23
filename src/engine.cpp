@@ -833,8 +833,13 @@ static bool place_tile_ok(const State &s, int team, V2 tile) {
 	return is_box_of(team, tile) && box_free(s, team) && !is_goal(tile);
 }
 
-static bool pushable(const State &s, V2 to) {
-	return in_bounds(to) && !is_goal(to) && !is_any_box(to) && player_at(s, to) == nullptr;
+// v5.71: 박스 칸으로는 그 박스에 이미 선 선수만 밀려 들어간다 (actions.gd _pushable)
+static bool pushable(const State &s, const Player &q, V2 to) {
+	if (!in_bounds(to) || is_goal(to) || player_at(s, to) != nullptr)
+		return false;
+	if (is_any_box(to))
+		return is_box_of(q.team, to) && is_box_of(q.team, q.pos);
+	return true;
 }
 
 // 타이탄 착지 충격파 (spec 5.9 v5.6): 도착 칸 사방 인접 적 전원을 각각 바깥으로 1칸 —
@@ -845,9 +850,8 @@ static void titan_push(State &s, const Player &p, V2 dest) {
 		return;
 	for (const V2 &dir : DIRS) {
 		const Player *q = player_at(s, dest + dir);
-		if (!q || q->team == p.team || !pushable(s, q->pos + dir) || (s.hold == 1 && q->uid == s.ball_owner_uid)
-				|| is_any_box(q->pos))
-			continue;   // 버티는 캐논(v5.45)·박스 안 키퍼(v5.68)는 안 밀린다
+		if (!q || q->team == p.team || !pushable(s, *q, q->pos + dir) || (s.hold == 1 && q->uid == s.ball_owner_uid))
+			continue;   // 버티는 캐논(v5.45)은 안 밀린다. v5.71: 박스 안 선수도 밀린다
 		Player &qm = s.players[q->uid];
 		qm.pos = qm.pos + dir;
 		qm.stance = 0; // 밀려나면 수비 태세 해제 (spec 5.12 v5.3)
@@ -861,9 +865,8 @@ static int legal_pushes(const State &s, const Player &p, int out[4]) {
 		return 0;
 	for (const V2 &dir : DIRS) {
 		const Player *q = player_at(s, p.pos + dir);
-		if (q && q->team != p.team && pushable(s, q->pos + dir) && !(s.hold == 1 && q->uid == s.ball_owner_uid)
-				&& !is_any_box(q->pos))   // v5.68 박스 안 키퍼는 안 밀린다
-			out[n++] = q->uid;
+		if (q && q->team != p.team && pushable(s, *q, q->pos + dir) && !(s.hold == 1 && q->uid == s.ball_owner_uid))
+			out[n++] = q->uid;   // v5.71: 박스 안 선수도 밀린다
 	}
 	return n;
 }
