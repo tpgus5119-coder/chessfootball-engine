@@ -919,7 +919,7 @@ static V2 dribble_run(State &s, int uid, const std::vector<V2> &path, bool speci
 				break;
 			}
 			s.players[body->uid].stance = 0;   // v5.68: 경합에서 진 수비수는 태세가 풀린다
-			drb = cn.atk - cn.def;
+			// v5.72 감쇠 폐지 — 이겨도 공격 값 그대로 (ball_actions.gd · actions.gd 와 같다)
 		}
 		// **빈 칸 갱신이 경합보다 먼저다** (v5.21) — 진 그 칸까지 가서 거기 선다 (GDScript _dribble_contests와 같은 순서)
 		if (body == nullptr)
@@ -935,7 +935,7 @@ static V2 dribble_run(State &s, int uid, const std::vector<V2> &path, bool speci
 				break;
 			}
 			s.players[du].stance = 0;   // v5.68: 경합에서 진 수비수는 태세가 풀린다
-			drb = c.atk - c.def; // 연속 경합 감쇠 (v5.53)
+			// v5.72 감쇠 폐지 — 이겨도 공격 값 그대로 (ball_actions.gd · actions.gd 와 같다)
 		}
 	}
 	return stolen ? last_free : path.back();
@@ -1300,7 +1300,7 @@ static bool send_ball(State &s, const Player &p, const std::vector<V2> &path, in
 		CRes c = resolve_with(s, p, atk, s.players[du], INT_, tile);
 		if (c.atk_wins) {
 			s.players[du].stance = 0;   // v5.68: 경합에서 진 수비수는 태세가 풀린다
-			atk = c.atk - c.def;   // v5.18: 패스도 감쇠
+			// v5.72 감쇠 폐지 — 이겨도 공격 값 그대로 (ball_actions.gd · actions.gd 와 같다)
 		} else {
 			s.set_ball_owner(zone[idx(tile)]);
 			return true;
@@ -1407,7 +1407,7 @@ static bool do_pass_to(State &s, int uid, V2 dest, int want = -1) {
 // 전진 전용이던 v5.14~v5.27에서는 적진 끝 라인에 선 선수가 슛을 아예 못 했다 (첫 걸음이
 // 반드시 전진이라 필드 밖으로 나간다) — 전진에 보상이 없던 원인의 절반이 이 규칙이었다
 static Dirs shot_dirs(const State &, const Player &p) {
-	return step_dirs(p.team, M_LATERAL);   // v5.68: 횡으로 시작하는 슛도 된다 (뒤로만 못 간다)
+	return step_dirs(p.team, M_ALL);   // v5.72: 슛도 패스와 같은 사방 (ball_actions.gd _shot_dirs)
 }
 
 struct ShotCtx {
@@ -1451,7 +1451,7 @@ static bool do_shot_auto(State &s, int uid) {
 		met[du] = true;
 		CRes c = resolve_with(s, *p, atk, s.players[du], INT_, tile);
 		if (c.atk_wins) {
-			atk = c.atk - c.def;
+			// v5.72 감쇠 폐지 — 이겨도 공격 값 그대로 (ball_actions.gd · actions.gd 와 같다)
 		} else {
 			s.set_ball_owner(du);
 			s.mark_acted(uid);
