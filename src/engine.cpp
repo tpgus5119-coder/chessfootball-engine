@@ -981,7 +981,8 @@ static bool do_move_to(State &s, int uid, V2 dest) {
 		return false;
 	int pre_bt = s.ball_team();
 	s.turn_actions += 1;
-	s.pts -= 1;
+	// v5.78 (사용자 확정 2026-10-23 "ㄱㄱ하자"): **스프린터가 루즈볼을 줍는 이동은 0포인트** (GDScript move_cost와 같다)
+	s.pts -= (p.position == SPRINTER && s.loose_ball() && std::find(path.begin(), path.end(), s.ball_pos) != path.end()) ? 0 : 1;
 	// 루즈볼 습득 (spec 5.4 v5.32): 경로의 **어느 칸이든** 공을 밟으면 줍고, 남은 걸음은
 	// 주운 칸에서 출발하는 드리블로 경합한다 (GDScript _move_exec과 같다)
 	if (s.loose_ball()) {
