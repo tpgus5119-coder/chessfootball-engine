@@ -106,6 +106,7 @@ struct State {
 	// 설정 (버퍼 제외 — 경기 중 불변. set_config로 넣는다)
 	int opener = HOME;      // 전반 선공
 	int absent_mask = 0;    // 결장 선수 (컵 부상 — uid 비트)
+	int keeper_box = 0;     // v5.84 박스 키퍼 모드 (game_state.gd keeper_box — 경기 설정이라 버퍼 밖, set_config)
 	Player players[PLAYERS];
 
 	bool has_acted(int uid) const { return (acted_mask >> uid) & 1; }

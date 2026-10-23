@@ -766,8 +766,6 @@ static int move_rng(const State &s, const Player &p) {
 	return p.move_range() + boost(s, p);   // v5.60 부스터
 }
 
-// 이동(공 없는 걸음) 차단 칸. v5.50: **스프린터는 적의 몸과 박스를 지나간다** — 멈추는 칸은 빈 칸·박스 밖
-// (move_dest_ok). actions.gd _move_blocked와 같다
 // 이동(공 없는 걸음)의 차단 칸 (actions.gd _move_blocked — v5.82): 양쪽 박스는 **지나갈 수 있다**(멈추지는 못함 — move_dest_ok).
 // 골대 칸은 아무도 못 지난다. 적의 몸은 벽 — 스프린터만 지나간다
 static void move_blocked(const State &s, const Player &p, bool blocked[NT]) {
@@ -778,19 +776,36 @@ static void move_blocked(const State &s, const Player &p, bool blocked[NT]) {
 		enemy_standing_blocked(s, p.team, blocked);
 }
 
-// 멈출 수 있는 칸 (actions.gd _move_dest_ok): 빈 칸, 박스 밖 (v5.82 — 박스에는 아무도 못 선다)
-static bool move_dest_ok(const State &s, V2 t, const Player &) {
-	return !is_any_box(t) && player_at(s, t) == nullptr;
+// 자기 박스에 아군이 아무도 없는가 (v5.84 박스 키퍼 모드 — game_state.gd box_free)
+static bool box_free(const State &s, int team) {
+	for (int u = 0; u < PLAYERS; u++)
+		if (s.players[u].team == team && s.players[u].is_placed() && is_box_of(team, s.players[u].pos))
+			return false;
+	return true;
 }
 
-// 배치 칸 (game_state.gd place_tile_ok): 자기 진영의 빈 칸, 박스 밖
+// 멈출 수 있는 칸 (actions.gd _move_dest_ok): 빈 칸, 박스 밖 (v5.82). 박스 키퍼 모드면 자기 박스(골대 ×)도 — 팀에 한 명, 이미 안에 있으면 그 안에서 옮김
+static bool move_dest_ok(const State &s, V2 t, const Player &p) {
+	if (player_at(s, t) != nullptr)
+		return false;
+	if (!is_any_box(t))
+		return true;
+	return s.keeper_box && is_box_of(p.team, t) && !is_goal(t) && (box_free(s, p.team) || is_box_of(p.team, p.pos));
+}
+
+// 배치 칸 (game_state.gd place_tile_ok): 자기 진영의 빈 칸, 박스 밖 — 박스 키퍼 모드면 자기 박스(골대 ×)에 한 명
 static bool place_tile_ok(const State &s, int team, V2 tile) {
-	return is_own_half(team, tile) && !is_any_box(tile) && !player_at(s, tile);
+	if (!is_own_half(team, tile) || player_at(s, tile))
+		return false;
+	return !is_any_box(tile) || (s.keeper_box && is_box_of(team, tile) && !is_goal(tile) && box_free(s, team));
 }
 
-// 밀려날 뒤 칸이 열려 있는가 (actions.gd _pushable): 필드 밖·골대·박스·선수 칸으로는 못 민다
-static bool pushable(const State &s, V2 to) {
-	return in_bounds(to) && !is_any_box(to) && player_at(s, to) == nullptr;
+// 밀려날 뒤 칸이 열려 있는가 (actions.gd _pushable): 필드 밖·골대·박스·선수 칸으로는 못 민다.
+// 박스 키퍼 모드: 자기 박스에 선 선수만 그 박스 안으로 밀려 들어간다
+static bool pushable(const State &s, const Player &q, V2 to) {
+	if (!in_bounds(to) || player_at(s, to) != nullptr)
+		return false;
+	return !is_any_box(to) || (s.keeper_box && is_box_of(q.team, to) && is_box_of(q.team, q.pos) && !is_goal(to));
 }
 
 // 타이탄 착지 충격파 (spec 5.9 v5.6): 도착 칸 사방 인접 적 전원을 각각 바깥으로 1칸 —
@@ -801,7 +816,7 @@ static void titan_push(State &s, const Player &p, V2 dest) {
 		return;
 	for (const V2 &dir : DIRS) {
 		const Player *q = player_at(s, dest + dir);
-		if (!q || q->team == p.team || !pushable(s, q->pos + dir) || (s.hold == 1 && q->uid == s.ball_owner_uid))
+		if (!q || q->team == p.team || !pushable(s, *q, q->pos + dir) || (s.hold == 1 && q->uid == s.ball_owner_uid))
 			continue;   // 버티는 캐논(v5.45)은 안 밀린다. v5.71: 박스 안 선수도 밀린다
 		Player &qm = s.players[q->uid];
 		qm.pos = qm.pos + dir;
@@ -816,7 +831,7 @@ static int legal_pushes(const State &s, const Player &p, int out[4]) {
 		return 0;
 	for (const V2 &dir : DIRS) {
 		const Player *q = player_at(s, p.pos + dir);
-		if (q && q->team != p.team && pushable(s, q->pos + dir) && !(s.hold == 1 && q->uid == s.ball_owner_uid))
+		if (q && q->team != p.team && pushable(s, *q, q->pos + dir) && !(s.hold == 1 && q->uid == s.ball_owner_uid))
 			out[n++] = q->uid;   // v5.71: 박스 안 선수도 밀린다
 	}
 	return n;
@@ -1099,8 +1114,6 @@ static int legal_tackle_target(const State &s, const Player &p) { // -1 = 없음
 		return -1;   // v5.79: 태클은 경합이다 — 이번 턴에 이미 경합했으면 못 한다
 	if (p.position == WALL)
 		return -1; // 월은 직접 태클이 없다 (v5.52) — 존의 자동 태클·인터셉트만
-	if (p.stance == 1)
-		return -1; // v5.68: 수비 태세 중에는 태클 버튼이 없다 — 존이 저절로 태클한다
 	int dist = manhattan(owner.pos, p.pos);
 	if (dist > (p.position == HUNTER ? 2 : p.tackle_range()))
 		return -1;   // v5.68: 2칸은 헌터의 2포인트 특기
