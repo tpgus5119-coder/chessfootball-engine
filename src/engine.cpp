@@ -55,7 +55,6 @@ void State::begin_redeploy(int no_ball_team) {
 		p.pos = UNPLACED;
 		p.placed_order = -1;
 		p.stance = 0;
-		p.mark_pick = -1;
 	}
 	reset_ball();
 	phase = PLACEMENT;
@@ -375,23 +374,9 @@ static bool screened(const State &s, const Player &p, V2 tile, V2 last) {
 // 마커 m이 잡는 적 한 명 (contest.gd marker_target과 같다 — v5.52부터 판정이 쓴다).
 // 우리 팀에 공이 없을 때: ① 공을 가진 적 ② 우리 골대에 가까운 적 ③ 배치 순서
 // 우리 팀에 공이 있을 때: ① 공 가진 우리 선수에게 가까운 적 ② 적 골대에 가까운 적 ③ 배치 순서
-// 마커 m이 t를 잡을 수 있는가 — 붙은 적, 버티는 타워 제외 (contest.gd mark_ok)
-static bool mark_ok(const State &s, const Player &m, int t) {
-	if (t < 0 || t >= PLAYERS)
-		return false;
-	const Player &q = s.players[t];
-	if (!q.is_placed() || q.team == m.team || !m.is_placed())
-		return false;
-	if (s.hold == 1 && q.uid == s.ball_owner_uid)
-		return false;
-	return manhattan(q.pos, m.pos) == 1;
-}
-
 static int marker_target(const State &s, const Player &m) {
 	if (s.ball_owner_uid == m.uid)
 		return -1; // 공을 가진 마커는 잡지 않는다 (v5.46)
-	if (m.mark_pick != -1 && mark_ok(s, m, m.mark_pick))
-		return m.mark_pick; // 직접 고른 대상이 먼저 (v5.57)
 	const Player *holder = s.ball_owner_uid != -1 ? &s.players[s.ball_owner_uid] : nullptr;
 	if (holder && holder->team != m.team)
 		holder = nullptr;
@@ -890,14 +875,12 @@ static bool do_push(State &s, int uid, int target_uid) {
 
 // 드리블 경로의 태클 존 경합 — 드리블과 **루즈볼 주워 몰고 가는 이동**(v5.32)이 같이 쓴다.
 // players[uid].pos = 출발 칸. 끝 칸(뺏기면 마지막 빈 칸)을 돌려준다 (GDScript _dribble_contests)
-static int dribble_safe(const State &s, const Player &p);
 static V2 dribble_run(State &s, int uid, const std::vector<V2> &path, bool special = false) {
 	V2 last_free = s.players[uid].pos;
 	bool stolen = false;
-	// 치달 (spec 5.3 v5.12): 자기 드리블 범위를 넘어 이동 범위까지 가는 것 — 그 드리블의 모든 경합에서 DRB −1.
-	// v5.68 트릭스터 특기(special)는 치달이 아니다. 후진 값은 폐지
-	bool burst = !special && int(path.size()) > dribble_safe(s, s.players[uid]);
-	int drb = std::max(0, positional_stat(s, s.players[uid], DRB) - (burst ? 1 : 0));
+	// v5.73 치달 폐지 · v5.68 후진 값 폐지 — DRB는 늘 온전한 값 (actions.gd _drb_ctx)
+	(void)special;
+	int drb = positional_stat(s, s.players[uid], DRB);
 	int zone[NT];
 	build_zone(s, opponent(s.players[uid].team), zone);   // v5.30: 태세·월만 4칸
 	bool met[PLAYERS] = { false };   // 한 선수와는 한 번만 (spec 5.8 v5.18)
@@ -1035,11 +1018,6 @@ static int dribble_range(const State &s, const Player &p) {
 	return p.move_range() + boost(s, p);   // v5.60 부스터
 }
 
-// 치달 없이 갈 수 있는 거리 (기본 2, 트릭스터 3)
-static int dribble_safe(const State &s, const Player &p) {
-	return p.dribble_range() + boost(s, p);   // v5.60 부스터
-}
-
 // v5.68 트릭스터 알까기: 포인트 2가 남은 트릭스터는 적의 몸 칸을 지나간다 (actions.gd _nutmeg · _dribble_blocked)
 static bool nutmeg(const State &s, const Player &p) {
 	return p.position == TRICKSTER && s.pts >= 2;
@@ -1055,8 +1033,6 @@ static void dribble_blocked(const State &s, const Player &p, bool blocked[NT]) {
 static bool through_foe(const State &s, const Player &p, const std::vector<V2> &path) {
 	if (!nutmeg(s, p))
 		return false;
-	if (int(path.size()) > dribble_safe(s, p))
-		return true;
 	for (const V2 &t : path) {
 		const Player *q = player_at(s, t);
 		if (q && q->team != p.team)

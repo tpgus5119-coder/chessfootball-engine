@@ -67,7 +67,6 @@ struct Player {
 	int placed_order = -1;
 	int position = PROSPECT;
 	int stance = 0;
-	int mark_pick = -1; // v5.57 마커가 직접 고른 잡기 대상 (−1 = 자동)
 	int uid = -1;
 	int team = HOME;
 	int growth[6] = { 0, 0, 0, 0, 0, 0 }; // 컵 성장분 (player_state.gd growth) — 경기 중 불변이라 버퍼 밖 (set_growth로 넣는다)
