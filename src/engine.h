@@ -12,8 +12,10 @@ constexpr int W = 10, H = 7, NT = W * H;          // board.gd
 constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
 constexpr int POOL_N = 11;                  // 드래프트 풀 종류 수 (game_state.gd DRAFT_POOL — 순서는 engine.cpp)
 constexpr int HALF_TURNS = 60, MAX_TURNS = 120, POINTS_PER_TURN = 2; // game_state.gd (v5.44 — 반마다 팀당 30턴)
-constexpr int BUF_HEAD = 24, // v5.80: 22·23 = 마커 수동 잡기 대상 · v5.79: 21 = contest_used
-	 BUF_LEN = BUF_HEAD + PLAYERS * 6; // 선수당 6칸 (자리 x·y · 배치 순서 · 포지션 · 태세 · 팀) — game_state.gd save_state와 같다
+constexpr int BUF_HEAD = 24, // v5.95: 기세(v5.86~v5.94 24·25) 폐지 · v5.80: 22·23 = 마커 수동 잡기 대상 · v5.79: 21 = contest_used
+	 BUF_P = 7,                     // 선수당 7칸 (자리 x·y · 배치 순서 · 포지션 · 태세 · 팀 · 체력) — game_state.gd save_state와 같다 (v5.90 아웃 폐지)
+	 BUF_LEN = BUF_HEAD + PLAYERS * BUF_P;
+constexpr int STA_MAX = 3, STA_STEP = 2, STA_ACT = 1;   // v5.86 체력 (actions.gd STA_* · player_state.gd STA_MAX)
 constexpr int LONG_PASS_MIN = 5;                   // ball_actions.gd (v5.12)
 
 struct V2 {
@@ -37,7 +39,7 @@ enum Stat { SHT = 0, PAS, DRB, INT_, TKL, PHY };
 // 액션 종류 (GDScript 문자열과 1:1 — minimax_bot.gd ACT_NAME과 같은 순서가 인코딩 계약이다).
 // 6(A_BOOST) = 부스터 부스트 (v5.83 — 옛 하프타임 교체 자리를 물려받았다). 태클·밀기·잡기는 dest.x = 대상 uid
 enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_BOOST, A_STANCE, A_HOLD, A_PUSH, A_END, A_GRAB };
-constexpr int N_ACT = 12;   // 6 = 부스트 · 8 = 캐논 버티기 · 9 = 타이탄 제자리 밀기 · 10 = 턴 종료 · 11 = 마커 잡기
+constexpr int N_ACT = 12;   // 6 = 부스트 · 8 = 캐논 버티기 · 9 = 타이탄 제자리 밀기 · 10 = 턴 종료 · 11 = 마커 잡기 (12 재투입은 v5.90에 폐지)
 
 inline bool in_bounds(V2 t) { return t.x >= 0 && t.x < W && t.y >= 0 && t.y < H; }
 inline int idx(V2 t) { return t.y * W + t.x; } // in_bounds 전제
@@ -65,6 +67,7 @@ struct Player {
 	int placed_order = -1;
 	int position = PROSPECT;
 	int stance = 0;
+	int sta = STA_MAX;   // v5.86 체력 0~3 (player_state.gd sta)
 	int uid = -1;
 	int team = HOME;
 	int growth[6] = { 0, 0, 0, 0, 0, 0 }; // 컵 성장분 (player_state.gd growth) — 경기 중 불변이라 버퍼 밖 (set_growth로 넣는다)
@@ -99,8 +102,8 @@ struct State {
 	int redeploy = 0;       // 지금 배치가 골·하프타임 뒤 재배치인가 (포지션 그대로)
 	int goal_turn[2] = { 0, 0 }; // 골을 넣은 턴 — 그 반의 몇 번째 턴 (1~30, 0 = 없음). 1:1 판정 (v5.39)
 	int boost_on = 0;       // v5.83: 지금 차례 팀의 부스터가 이번 턴에 부스트를 켰는가 (game_state.gd boost_on · 버퍼 17번 칸)
-	int contest_used = 0;   // v5.79: 이번 턴에 경합이 났는가 — 경합은 한 팀 한 턴에 한 번 (game_state.gd contest_used)
-	int contest_cap() const { return contest_used ? 0 : 1; }
+	int contest_used = 0;   // v5.79: 이번 턴에 경합이 났는가 — 막는 규칙은 없어졌고 기록만 한다 (버퍼 21번 칸 · 평가망 입력)
+	int pay_uid = -1, pay_n = 0;   // v5.93 이번 액션에 체력을 낸 선수·양 — 경합 동점의 체력은 내기 전 숫자(battery). 버퍼에 안 싣는다(액션 안에서만)
 	int grab[2] = { -1, -1 }; // v5.80 마커 수동 잡기 — 팀마다 그 팀 마커가 붙잡은 적 uid (game_state.gd grab)
 	int hold = 0;           // 캐논 버티기 (game_state.gd hold): 0 가능 · 1 버티는 중 · 2 버틴 뒤(그 공으로는 다시 못 버팀)함
 	// 설정 (버퍼 제외 — 경기 중 불변. set_config로 넣는다)
@@ -146,7 +149,8 @@ struct State {
 	bool clock();
 	bool decided();
 	int half_turn() const { return turn_count - (half - 1) * HALF_TURNS; }
-	void save_buf(int *buf) const;   // save_state와 같은 배치 (21 + 5/선수)
+	void turn_stamina(int team);     // v5.86 내 차례 시작의 체력 (game_state.gd _turn_stamina)
+	void save_buf(int *buf) const;   // save_state와 같은 배치 (BUF_HEAD + BUF_P/선수)
 	void load_buf(const int *buf);
 };
 
@@ -172,7 +176,7 @@ double evaluate(const State &s, int team, const double w[6]);
 // 미니맥스 선택 (실행하지 않는다). found=false면 합법 수 없음. best_out = 고른 수의 탐색 점수(둔 팀 관점)
 Action pick_action(const State &s, int depth, const double w[6], bool &found, double *best_out = nullptr);
 // 손평가 가중치 — ai/eval.gd DEFAULT와 같은 값 한 벌 (게임·알파제로 첫 세대 가치·아레나·균형 실측이 같이 쓴다)
-constexpr double LIN_W[6] = { 0.20, 0.30, 0.60, 0.15, 0.50, 0.05 };
+constexpr double LIN_W[6] = { 0.20, 0.30, 0.60, 0.15, 0.30, 0.05 };   // eval.gd DEFAULT (4번 = 공 임자 배터리 — v5.94 실측)
 
 // ---------- 자가대전 공장 (simulator.gd run_match의 C++판) ----------
 // 난수는 **배치·엔트리 셔플에만** 쓴다 (게임 로직 난수 금지 — CLAUDE.md. GDScript 하네스와 같은 예외).
