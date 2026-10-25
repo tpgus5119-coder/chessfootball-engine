@@ -233,16 +233,6 @@ static const Player *player_at(const State &s, V2 t) {
 // ---------- 체력 (v5.86 — game_state.gd _turn_stamina) ----------
 
 // 내 차례 시작: 수비 태세(월 제외)는 회복 대신 −1 — 0이면 태세가 풀린다. 나머지는 +1 (최대 3)
-// 체력 상한 (game_state.gd sta_cap — v5.94): 우리 부스터와 상하좌우로 붙은 선수는 4, 나머지 3
-static int sta_cap(const State &s, const Player &p) {
-	for (const V2 &d : DIRS) {
-		const Player *q = player_at(s, p.pos + d);
-		if (q && q->team == p.team && q->position == BOOSTER)
-			return STA_MAX + 1;
-	}
-	return STA_MAX;
-}
-
 void State::turn_stamina(int team) {
 	for (Player &p : players) {
 		if (p.team != team || !p.is_placed())
@@ -252,7 +242,7 @@ void State::turn_stamina(int team) {
 			if (p.sta == 0)
 				p.stance = 0;
 		} else {
-			p.sta = std::min(p.sta + 1, sta_cap(*this, p));   // v5.94 부스터 옆 4 (넘은 4는 3으로)
+			p.sta = std::min(p.sta + 1, STA_MAX);
 		}
 	}
 }
@@ -786,9 +776,6 @@ static bool can_move(const State &s, const Player &p) {
 static void after_action(State &s) {
 	if (s.phase != PLAY)
 		return;
-	for (Player &p : s.players)   // v5.94 부스터와 떨어진 4 → 즉시 3 (game_state.gd settle_sta)
-		if (p.is_placed() && p.sta > STA_MAX && sta_cap(s, p) <= STA_MAX)
-			p.sta = STA_MAX;
 	for (int t = 0; t < 2; t++)   // 풀린 잡기를 확정해 지운다 (game_state.gd settle_grab — 떨어지면 다시 붙어도 안 되살아난다)
 		if (s.grab[t] >= 0 && grab_target_of(s, t) == -1)
 			s.grab[t] = -1;
