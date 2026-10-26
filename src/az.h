@@ -22,7 +22,7 @@ namespace az {
 
 // ---------- 수의 번호 (정책 머리의 출력 칸) ----------
 // 이동·드리블·패스·슛 (4 × 내 5 × 칸 70) · 마에스트로 패스 포인트 0·2 변형 (2 × 5 × 70; 1포인트는 보통 패스 칸) ·
-// 태클·밀기·잡기 (3 × 내 5 × 상대 5) · 태세 5 · 버티기 5 · 턴 종료 1 · 배치 슬롯 11 × 70 · 부스트 5 · 재투입 5 × 70 = 3311 (v5.86 — 그 전 2961)
+// 태클·밀기·잡기 (3 × 내 5 × 상대 5) · 태세 5 · 버티기 5 · 턴 종료 1 · 배치 슬롯 11 × 70 · 부스트 5 · 해제 5 = 2966 (v5.98 — 그 전 2961, 재투입 5 × 70은 v5.90에 뺐다)
 // (2026-10-23 입력 칸을 고치며 망을 새로 시작할 때 옛 교체 자리 66칸을 걷어냈다 — 그 전 NA는 3022)
 constexpr int OFF_TILE = 0;
 constexpr int OFF_PASSC = OFF_TILE + 4 * PER_TEAM * NT;
@@ -32,7 +32,8 @@ constexpr int OFF_HOLD = OFF_STANCE + PER_TEAM;
 constexpr int OFF_END = OFF_HOLD + PER_TEAM;
 constexpr int OFF_PLACE = OFF_END + 1;
 constexpr int OFF_BOOST = OFF_PLACE + POOL_N * NT;   // v5.83
-constexpr int NA = OFF_BOOST + PER_TEAM;   // v5.90 재투입 칸을 뺐다 (박스 아웃 폐지) — 망 형식이 바뀌어 학습은 처음부터
+constexpr int OFF_UNSTANCE = OFF_BOOST + PER_TEAM;   // v5.98 태세 해제 — 맨 끝에 붙여 앞 칸 번호는 그대로
+constexpr int NA = OFF_UNSTANCE + PER_TEAM;   // 2966 (v5.98 — 그 전 2961). 망 출력 칸이 바뀌어 학습은 처음부터
 
 int action_index(const State &s, const Action &a);   // s.turn_team이 두는 팀. 모르는 수면 −1
 

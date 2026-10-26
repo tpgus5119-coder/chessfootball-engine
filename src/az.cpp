@@ -52,6 +52,10 @@ int action_index(const State &s, const Action &a) {
 			int me = a.uid - PER_TEAM * team;
 			return me < 0 || me >= PER_TEAM ? -1 : OFF_BOOST + me;
 		}
+		case A_UNSTANCE: {   // v5.98
+			int me = a.uid - PER_TEAM * team;
+			return me < 0 || me >= PER_TEAM ? -1 : OFF_UNSTANCE + me;
+		}
 		case A_END:
 			return OFF_END;
 		case A_PLACE: {

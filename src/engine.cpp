@@ -507,7 +507,7 @@ static void build_zone(const State &s, int team, int zone[NT]) {
 }
 
 // **길 하나가 일으킬 경합 수** (v5.79 — contest.gd path_contests와 같다): 실행처럼 p를 공 임자로 두고 만든 존으로,
-// 이기고 짐과 상관없이 만날 수비수 수. body_too = 드리블(알까기 몸 칸). p는 출발 칸에 선 선수(루즈볼 줍기는 주운 칸으로 옮긴 사본)
+// 이기고 짐과 상관없이 만날 수비수 수. body_too = 드리블(정면돌파 몸 칸). p는 출발 칸에 선 선수(루즈볼 줍기는 주운 칸으로 옮긴 사본)
 static bool screened(const State &s, const Player &p, V2 tile, V2 last);
 static int path_contests_z(const State &s, const Player &p, const std::vector<V2> &path, bool body_too, const int *zone);
 static int path_contests(const State &s, const Player &p, const std::vector<V2> &path, bool body_too) {
@@ -767,9 +767,9 @@ static int contest_room(const Player &, int) {
 	return 99;
 }
 
-// 이동 가능 (actions.gd _can_move): 태세 중에도 옮길 수 있고 옮기면 풀린다 (spec 5.12 v5.59 — 해제 액션 폐지) · 체력 2 (v5.86)
+// 이동 가능 (actions.gd _can_move): 태세 중에도 옮길 수 있고 옮기면 풀린다 (spec 5.12 v5.59 — 해제 액션 폐지) · 체력 1 (v5.97)
 static bool can_move(const State &s, const Player &p) {
-	return can_act(s, p) && s.ball_owner_uid != p.uid && !kickoff_turn(s) && !is_pinned(s, p) && p.sta >= STA_STEP;
+	return can_act(s, p) && s.ball_owner_uid != p.uid && !kickoff_turn(s) && !is_pinned(s, p) && p.sta >= STA_MOVE;
 }
 
 // v5.51: 공을 뺏겨도 턴은 안 끝난다 — 포인트가 0일 때만 (actions.gd _after_action과 같다)
@@ -928,7 +928,7 @@ static V2 dribble_run(State &s, int uid, const std::vector<V2> &path, bool speci
 	bool met[PLAYERS] = { false };   // 한 선수와는 한 번만 (spec 5.8 v5.18)
 	const V2 start = s.players[uid].pos;
 	for (const V2 &tile : path) {
-		// **알까기** (v5.68 트릭스터 특기): 적의 몸 칸에 들어가기 직전 칸에서 그 적과 경합 — 지면 그 앞 칸에 서서 뺏긴다
+		// **정면돌파** (v5.68 트릭스터 특기): 적의 몸 칸에 들어가기 직전 칸에서 그 적과 경합 — 지면 그 앞 칸에 서서 뺏긴다
 		const Player *body = player_at(s, tile);
 		if (body && body->team != s.players[uid].team && !met[body->uid] && !marker_skips(*body, start)) {
 			met[body->uid] = true;
@@ -1039,11 +1039,11 @@ static bool do_move_to(State &s, int uid, V2 dest) {
 	if (!move_dest_ok(s, dest, p))
 		return false;
 	std::vector<V2> path = move_path(s, p, dest);
-	if (path.empty() || carry_contests(s, p, path) > contest_room(p, STA_STEP))
+	if (path.empty() || carry_contests(s, p, path) > contest_room(p, STA_MOVE))
 		return false;
 	s.turn_actions += 1;
 	s.pts -= 1;   // 이동은 늘 1포인트 (v5.81: 스프린터 0포인트 줍기 폐지 — actions.gd _move_exec과 같다)
-	pay(s, uid, STA_STEP);   // v5.86 이동 체력 2
+	pay(s, uid, STA_MOVE);   // v5.97 이동 체력 1
 	// 루즈볼 습득 (spec 5.4 v5.32): 경로의 **어느 칸이든** 공을 밟으면 줍고, 남은 걸음은
 	// 주운 칸에서 출발하는 드리블로 경합한다 (GDScript _move_exec과 같다)
 	bool picked = false;
@@ -1085,7 +1085,7 @@ static int dribble_range(const State &s, const Player &p) {
 	return p.move_range() + boost(s, p);   // v5.60 부스터
 }
 
-// v5.68 트릭스터 알까기: 포인트 2가 남은 트릭스터는 적의 몸 칸을 지나간다 (actions.gd _nutmeg · _dribble_blocked)
+// v5.68 트릭스터 정면돌파: 포인트 2가 남은 트릭스터는 적의 몸 칸을 지나간다 (actions.gd _nutmeg · _dribble_blocked)
 static bool nutmeg(const State &s, const Player &p) {
 	return p.position == TRICKSTER && s.pts >= 2;
 }
@@ -1096,7 +1096,7 @@ static void dribble_blocked(const State &s, const Player &p, bool blocked[NT]) {
 		enemy_standing_blocked(s, p.team, blocked);
 }
 
-// 트릭스터 알까기인가 (actions.gd _through_foe): 적의 몸 칸을 지나는 길 — 포인트 2
+// 트릭스터 정면돌파인가 (actions.gd _through_foe): 적의 몸 칸을 지나는 길 — 포인트 2
 static bool through_foe(const State &s, const Player &p, const std::vector<V2> &path) {
 	if (!nutmeg(s, p))
 		return false;
@@ -1196,6 +1196,18 @@ static bool do_stance(State &s, int uid) {
 	s.mark_acted(uid); // 다른 태세를 푸는 표시 — 새 태세는 그 뒤에 켠다
 	s.players[uid].stance = 1;
 	after_action(s);
+	return true;
+}
+
+// 태세 해제 (spec 5.12 v5.98 — actions.gd can_unstance·do_unstance): 내 차례 · 포인트 0 · 체력 0 · 턴의 첫 액션으로 안 친다 · 월은 없다
+static bool can_unstance(const State &s, const Player &p) {
+	return s.phase == PLAY && p.team == s.turn_team && p.is_placed() && p.stance > 0 && p.position != WALL;
+}
+
+static bool do_unstance(State &s, int uid) {
+	if (!can_unstance(s, s.players[uid]))
+		return false;
+	s.players[uid].stance = 0;
 	return true;
 }
 
@@ -1584,7 +1596,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 					carry_paths(s, q, sp);   // 루즈볼을 주운 뒤로는 적을 못 지나고 박스에 못 멈춘다 (줍기 전은 보통 이동 차단)
 				for (int i = 0; i < r.n; i++)
 					if (move_dest_ok(s, r.order[i], q) && (!sc || !sp[idx(r.order[i])].empty())
-							&& (!s.loose_ball() || carry_contests(s, q, sc ? sp[idx(r.order[i])] : canonical_path(q, r.order[i], mr, step_dirs(q.team, M_ALL), nullptr, blocked, UNSET)) <= contest_room(q, STA_STEP)))   // v5.86
+							&& (!s.loose_ball() || carry_contests(s, q, sc ? sp[idx(r.order[i])] : canonical_path(q, r.order[i], mr, step_dirs(q.team, M_ALL), nullptr, blocked, UNSET)) <= contest_room(q, STA_MOVE)))   // v5.86
 						out.push_back({ A_MOVE, u, r.order[i] });
 			}
 			int tt = legal_tackle_target(s, q);
@@ -1654,6 +1666,8 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 			out.push_back({ A_HOLD, u, { -1, 0 } });
 		if (can_boost(s, q))  // v5.83 부스트 — 버티기 바로 뒤 (action_space.gd와 같은 자리)
 			out.push_back({ A_BOOST, u, { 0, 0 } });
+		if (can_unstance(s, q))   // v5.98 태세 해제 (무료) — 부스트 바로 뒤
+			out.push_back({ A_UNSTANCE, u, { 0, 0 } });
 	}
 	if (can_end_turn(s))   // 턴 종료는 맨 끝 (action_space.gd)
 		out.push_back({ A_END, -1, { 0, 0 } });
@@ -1679,6 +1693,8 @@ bool apply_action(State &s, const Action &a) {
 			return do_hold(s, a.uid);
 		case A_BOOST:
 			return do_boost(s, a.uid);
+		case A_UNSTANCE:
+			return do_unstance(s, a.uid);
 		case A_PUSH:
 			return do_push(s, a.uid, a.dest.x);
 		case A_GRAB:
@@ -1827,7 +1843,7 @@ double evaluate(const State &s, int team, const double w[6]) {
 // 탐색 순서 (Act 인덱스 → ORDER 값): 슛0 · 태클·밀기1 · 드리블2 · 패스3 · 이동4 · 수비·버티기·잡기·부스트5 · 배치7 · 턴 종료9
 // — minimax_bot.gd ORDER와 동일. 좋은 수를 먼저 보면 알파베타 가지치기가 더 많이 잘라낸다.
 // 배치가 뒤인 이유: 그 단계에서는 다른 액션이 아예 없어 순서가 의미 없다
-static const int ORDER_OF[N_ACT] = { 4, 2, 1, 7, 3, 0, 5, 5, 5, 1, 9, 5 };
+static const int ORDER_OF[N_ACT] = { 4, 2, 1, 7, 3, 0, 5, 5, 5, 1, 9, 5, 5 };   // minimax_bot.gd ORDER — 해제 = 수비 칸
 constexpr int N_BUCKET = 10;
 
 static void ordered(std::vector<Action> &opts) {
@@ -1865,7 +1881,7 @@ static double search_(State &s, int d, double alpha, double beta, int root_team,
 			s = backup;
 			continue;
 		}
-		double sc = search_(s, d - 1, alpha, beta, root_team, w);
+		double sc = search_(s, d - (o.t == A_UNSTANCE ? 0 : 1), alpha, beta, root_team, w);   // 공짜 수는 수읽기 한 칸을 안 먹는다 (minimax_bot.gd _search)
 		s = backup;
 		if (maximizing) {
 			best = std::max(best, sc);
@@ -2020,7 +2036,7 @@ Action pick_action(const State &s0, int depth, const double w[6], bool &found, d
 			s = backup;
 			continue;
 		}
-		double sc = search_(s, depth - 1, best, std::numeric_limits<double>::infinity(), team, w);
+		double sc = search_(s, depth - (o.t == A_UNSTANCE ? 0 : 1), best, std::numeric_limits<double>::infinity(), team, w);
 		s = backup;
 		if (sc > best) {
 			best = sc;

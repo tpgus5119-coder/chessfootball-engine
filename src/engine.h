@@ -15,7 +15,7 @@ constexpr int HALF_TURNS = 60, MAX_TURNS = 120, POINTS_PER_TURN = 2; // game_sta
 constexpr int BUF_HEAD = 24, // v5.95: 기세(v5.86~v5.94 24·25) 폐지 · v5.80: 22·23 = 마커 수동 잡기 대상 · v5.79: 21 = contest_used
 	 BUF_P = 7,                     // 선수당 7칸 (자리 x·y · 배치 순서 · 포지션 · 태세 · 팀 · 체력) — game_state.gd save_state와 같다 (v5.90 아웃 폐지)
 	 BUF_LEN = BUF_HEAD + PLAYERS * BUF_P;
-constexpr int STA_MAX = 3, STA_STEP = 2, STA_ACT = 1;   // v5.86 체력 (actions.gd STA_* · player_state.gd STA_MAX)
+constexpr int STA_MAX = 3, STA_STEP = 2, STA_MOVE = 1, STA_ACT = 1;   // v5.86 체력 — 드리블 2 · 이동 1(v5.97) · 나머지 1 (actions.gd STA_* · player_state.gd STA_MAX)
 constexpr int LONG_PASS_MIN = 5;                   // ball_actions.gd (v5.12)
 
 struct V2 {
@@ -38,8 +38,8 @@ enum Pos { PROSPECT = 0, CANNON = 1, MAESTRO = 2, TRICKSTER = 3, TITAN = 4, MARK
 enum Stat { SHT = 0, PAS, DRB, INT_, TKL, PHY };
 // 액션 종류 (GDScript 문자열과 1:1 — minimax_bot.gd ACT_NAME과 같은 순서가 인코딩 계약이다).
 // 6(A_BOOST) = 부스터 부스트 (v5.83 — 옛 하프타임 교체 자리를 물려받았다). 태클·밀기·잡기는 dest.x = 대상 uid
-enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_BOOST, A_STANCE, A_HOLD, A_PUSH, A_END, A_GRAB };
-constexpr int N_ACT = 12;   // 6 = 부스트 · 8 = 캐논 버티기 · 9 = 타이탄 제자리 밀기 · 10 = 턴 종료 · 11 = 마커 잡기 (12 재투입은 v5.90에 폐지)
+enum Act { A_MOVE = 0, A_DRIBBLE, A_TACKLE, A_PLACE, A_PASS, A_SHOT, A_BOOST, A_STANCE, A_HOLD, A_PUSH, A_END, A_GRAB, A_UNSTANCE };
+constexpr int N_ACT = 13;   // 6 = 부스트 · 8 = 캐논 버티기 · 9 = 타이탄 제자리 밀기 · 10 = 턴 종료 · 11 = 마커 잡기 · 12 = 태세 해제 (v5.98 — 옛 재투입 자리)
 
 inline bool in_bounds(V2 t) { return t.x >= 0 && t.x < W && t.y >= 0 && t.y < H; }
 inline int idx(V2 t) { return t.y * W + t.x; } // in_bounds 전제
