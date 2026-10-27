@@ -281,10 +281,10 @@ static int placement_team(const State &s) {
 	return team_at(s, s.placement_index);
 }
 
-// v7.1: 그 팀에 이미 있는가 — 상대와 겹쳐도 된다 (game_state.gd is_drafted)
-static bool is_drafted(const State &s, int position, int team) {
+// v7.2: 어느 팀이든 이미 가져갔는가 — 양팀 통틀어 중복 금지 (game_state.gd is_drafted). team 인자는 호환용
+static bool is_drafted(const State &s, int position, int) {
 	for (int u = 0; u < PLAYERS; u++)
-		if (s.players[u].team == team && s.players[u].position == position)
+		if (s.players[u].position == position)
 			return true;
 	return false;
 }
