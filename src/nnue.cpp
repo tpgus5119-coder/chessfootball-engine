@@ -45,11 +45,9 @@ void net_input(const State &s, int team, NetInput &in) {
 	for (int k = 0; k < POOL_N; k++)   // 아무도 안 가진 슬롯 전부 (종전엔 마지막 슬롯이 빠졌다)
 		if (!drafted[k])
 			add(in, NN_OFF_BENCH + k);
-	for (int tm = 0; tm < 2; tm++) {   // v5.80 마커 수동 잡기
-		int gt = grab_target_of(s, tm);
-		if (gt != -1)
-			add(in, NN_OFF_GRAB + (s.players[gt].team == team ? 0 : 1) * NT + nn_tile(s.players[gt].pos, flip));
-	}
+	for (const Player &q : s.players)   // v6.4 마커에게 잡힌 선수 (옛 수동 잡기 칸을 물려받았다 — 칸 수 같음)
+		if (marked(s, q))
+			add(in, NN_OFF_GRAB + (q.team == team ? 0 : 1) * NT + nn_tile(q.pos, flip));
 	const int opp = opponent(team);
 	float *d = in.dense;
 	d[0] = s.phase == PLACEMENT;

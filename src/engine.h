@@ -10,12 +10,12 @@ namespace cf {
 
 constexpr int W = 10, H = 7, NT = W * H;          // board.gd
 constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
-constexpr int POOL_N = 11;                  // 드래프트 풀 종류 수 (game_state.gd DRAFT_POOL — 순서는 engine.cpp)
+constexpr int POOL_N = 10;                  // v7.0 드래프트 풀 종류 수 (game_state.gd DRAFT_POOL — 순서는 engine.cpp)
 constexpr int HALF_TURNS = 60, MAX_TURNS = 120, POINTS_PER_TURN = 2; // game_state.gd (v5.44 — 반마다 팀당 30턴)
 constexpr int BUF_HEAD = 24, // v5.95: 기세(v5.86~v5.94 24·25) 폐지 · v5.80: 22·23 = 마커 수동 잡기 대상 · v5.79: 21 = contest_used
 	 BUF_P = 7,                     // 선수당 7칸 (자리 x·y · 배치 순서 · 포지션 · 태세 · 팀 · 체력) — game_state.gd save_state와 같다 (v5.90 아웃 폐지)
 	 BUF_LEN = BUF_HEAD + PLAYERS * BUF_P;
-constexpr int STA_MAX = 3, STA_STEP = 2, STA_MOVE = 1, STA_ACT = 1;   // v5.86 체력 — 드리블 2 · 이동 1(v5.97) · 나머지 1 (actions.gd STA_* · player_state.gd STA_MAX)
+constexpr int STA_MAX = 2, STA_ACT = 1;   // v7.0 체력 상한 2 · 모든 액션 1 (부스터 곁은 0 — actions.gd pay) (player_state.gd STA_MAX)
 constexpr int LONG_PASS_MIN = 5;                   // ball_actions.gd (v5.12)
 
 struct V2 {
@@ -33,8 +33,8 @@ constexpr V2 DIRS[4] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }; // board.gd
 enum Team { HOME = 0, AWAY = 1 };
 enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2, SUB = 3 }; // SUB = 옛 하프타임 교체 (v5.68 폐지 — 번호만 남긴다)
 // 크리에이터(9)는 v5.30에 풀에서 빠졌다 — 번호는 구멍으로 남긴다 (기보·저장 호환). 퀵슈터 11 · 런처 12
-enum Pos { PROSPECT = 0, CANNON = 1, MAESTRO = 2, TRICKSTER = 3, TITAN = 4, MARKER = 5,
-	HUNTER = 6, BOOSTER = 7, WALL = 8, CREATOR = 9, SPRINTER = 10, QUICK = 11, LAUNCHER = 12 };   // v5.68: 12 = 런처 (옛 타워 자리)
+enum Pos { PROSPECT = 0, CANNON = 1, TRICKSTER = 3, TITAN = 4, MARKER = 5,
+	HUNTER = 6, BOOSTER = 7, WALL = 8, SPRINTER = 10, MAESTRO = 12, NOMAD = 13 };   // v7.0 — 번호는 player_state.gd Pos와 같다 (2·9·11 빈 자리)
 enum Stat { SHT = 0, PAS, DRB, INT_, TKL, PHY };
 // 액션 종류 (GDScript 문자열과 1:1 — minimax_bot.gd ACT_NAME과 같은 순서가 인코딩 계약이다).
 // 6(A_BOOST) = 부스터 부스트 (v5.83 — 옛 하프타임 교체 자리를 물려받았다). 태클·밀기·잡기는 dest.x = 대상 uid
@@ -67,7 +67,7 @@ struct Player {
 	int placed_order = -1;
 	int position = PROSPECT;
 	int stance = 0;
-	int sta = STA_MAX;   // v5.86 체력 0~3 (player_state.gd sta)
+	int sta = STA_MAX;   // v7.0 체력 0~2 (player_state.gd sta)
 	int uid = -1;
 	int team = HOME;
 	int growth[6] = { 0, 0, 0, 0, 0, 0 }; // 컵 성장분 (player_state.gd growth) — 경기 중 불변이라 버퍼 밖 (set_growth로 넣는다)
@@ -75,10 +75,9 @@ struct Player {
 	bool is_placed() const { return placed_order >= 0; }
 	int stat(int key) const; // 기본 3, 포지션 보너스 4 (player_state.gd)
 	int move_range() const { return position == SPRINTER ? 4 : 3; } // v5.15 스프린터만 4칸
-	int pass_range() const { return position == LAUNCHER ? 5 : 4; }   // 런처 5 (2포인트 롱볼은 6). 마에스트로는 4 — 포인트로 스탯만 산다
+	int pass_range() const { return position == MAESTRO ? 5 : 4; }   // v7.0 마에스트로 5 (5칸은 공중볼)
 	int shot_range() const { return position == CANNON ? 5 : 4; }  // v5.38: 캐논 5
-	int shot_cost() const { return position == QUICK ? 1 : 2; }    // v5.38: 슛 포인트 2, 퀵슈터 1
-	int tackle_range() const { return 1; }   // v5.68: 헌터 2칸은 2포인트 특기 (legal_tackle_target)
+	int tackle_range() const { return 1; }   // 붙은 공 임자에게만 — 헌터도 (v6.2 2칸 태클 폐지)
 	bool wide_zone() const { return stance == 1 || position == WALL; }
 	bool space_pass() const { return true; }  // v5.30: 빈 칸 패스는 전원 것이 됐다 (5.4)
 };
@@ -101,10 +100,10 @@ struct State {
 	int half = 1;
 	int redeploy = 0;       // 지금 배치가 골·하프타임 뒤 재배치인가 (포지션 그대로)
 	int goal_turn[2] = { 0, 0 }; // 골을 넣은 턴 — 그 반의 몇 번째 턴 (1~30, 0 = 없음). 1:1 판정 (v5.39)
-	int boost_on = 0;       // v5.83: 지금 차례 팀의 부스터가 이번 턴에 부스트를 켰는가 (game_state.gd boost_on · 버퍼 17번 칸)
+	int boost_on = 0;       // 옛 수동 부스트 자리 (v5.83~v6.3) — v6.4부터 늘 0 (버퍼 17번 칸 자리 유지)
 	int contest_used = 0;   // v5.79: 이번 턴에 경합이 났는가 — 막는 규칙은 없어졌고 기록만 한다 (버퍼 21번 칸 · 평가망 입력)
 	int pay_uid = -1, pay_n = 0;   // v5.93 이번 액션에 체력을 낸 선수·양 — 경합 동점의 체력은 내기 전 숫자(battery). 버퍼에 안 싣는다(액션 안에서만)
-	int grab[2] = { -1, -1 }; // v5.80 마커 수동 잡기 — 팀마다 그 팀 마커가 붙잡은 적 uid (game_state.gd grab)
+	int grab[2] = { -1, -1 }; // 옛 마커 수동 잡기 자리 (v5.80~v6.3) — v6.4부터 늘 −1 (버퍼 22·23번 칸 자리 유지)
 	int hold = 0;           // 캐논 버티기 (game_state.gd hold): 0 가능 · 1 버티는 중 · 2 버틴 뒤(그 공으로는 다시 못 버팀)함
 	// 설정 (버퍼 제외 — 경기 중 불변. set_config로 넣는다)
 	int opener = HOME;      // 전반 선공
@@ -117,12 +116,10 @@ struct State {
 	void mark_acted(int uid) {
 		acted_mask |= 1 << uid;
 		players[uid].stance = 0;
-		if (players[uid].position == MARKER)
-			grab[players[uid].team] = -1;   // v5.80: 마커가 다른 행동을 하면 수동 잡기가 풀린다
 	}
 	void set_ball_owner(int uid) {
-		if (uid != ball_owner_uid) // v5.68: 버티기는 캐논의 1포인트 행동 — 공이 바뀌면 면역 끝 (game_state.gd set_ball_owner)
-			hold = 0;
+		if (uid != ball_owner_uid) // v7.0: 캐논이 공을 받으면 저절로 버틴다 — 내 다음 차례까지 면역, 드리블하면 끝 (game_state.gd set_ball_owner)
+			hold = uid != -1 && players[uid].position == CANNON ? 1 : 0;
 		ball_owner_uid = uid;
 		ball_pos = UNPLACED; // 주인이 생기면 루즈볼은 사라진다 (v5.15)
 		loose_team = -1;
@@ -149,7 +146,7 @@ struct State {
 	bool clock();
 	bool decided();
 	int half_turn() const { return turn_count - (half - 1) * HALF_TURNS; }
-	void turn_stamina(int team);     // v5.86 내 차례 시작의 체력 (game_state.gd _turn_stamina)
+	void turn_stamina(int team);   // v5.86 내 차례 시작의 체력 (game_state.gd _turn_stamina)
 	void save_buf(int *buf) const;   // save_state와 같은 배치 (BUF_HEAD + BUF_P/선수)
 	void load_buf(const int *buf);
 };
@@ -158,7 +155,7 @@ struct Action {
 	int t = -1; // Act
 	int uid = -1;
 	V2 dest{ 0, 0 }; // 태클·밀기는 dest.x = 대상 uid (GDScript 인코딩 그대로)
-	int cost = -1;   // v5.68 마에스트로 패스 포인트 0·1·2 (= PAS 3·4·5). 그 밖의 수는 −1 (action_space.gd "cost")
+	int cost = -1;   // 옛 마에스트로 패스 단계 자리 (v5.68~v6.0) — v6.1부터 늘 −1 (기보·정책 칸 형식은 그대로 둔다)
 };
 
 // ai/action_space.gd — 열거(순서 고정)와 실행. apply는 결과 ok만 돌려준다 (상태가 곧 결과)
@@ -168,7 +165,7 @@ bool apply_action(State &s, const Action &a);
 // 신경망 입력(nnue.cpp)이 쓰는 규칙 질의
 int pool_slot(int position);          // 드래프트 슬롯 (풀에 없는 포지션 = −1)
 bool kickoff_turn(const State &s);    // actions.gd is_kickoff_turn
-int grab_target_of(const State &s, int team);   // v5.80 마커 수동 잡기 — 지금 붙잡힌 적 (−1 = 없음)
+bool marked(const State &s, const Player &p);   // v6.4 마커에게 잡혔는가 — 범위 −1 · 회복 없음 (game_state.gd marked)
 
 // ai/eval.gd + minimax_bot.gd — 손평가(선형) + 미니맥스
 void features(const State &s, int team, double f[6]);
