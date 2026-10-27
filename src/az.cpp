@@ -201,6 +201,24 @@ struct Rng {
 	}
 	double unit() { return double(next() >> 11) * (1.0 / 9007199254740992.0); }
 	double gumbel() { return -std::log(-std::log(std::max(unit(), 1e-12))); }
+	double normal() {   // Box–Muller
+		double u1 = std::max(unit(), 1e-12), u2 = unit();
+		return std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+	}
+	double gamma(double alpha) {   // Marsaglia–Tsang (α<1은 α+1로 뽑아 U^(1/α) 보정)
+		if (alpha < 1.0)
+			return gamma(alpha + 1.0) * std::pow(std::max(unit(), 1e-12), 1.0 / alpha);
+		double d = alpha - 1.0 / 3.0, c = 1.0 / std::sqrt(9.0 * d);
+		for (;;) {
+			double x = normal(), v = 1.0 + c * x;
+			if (v <= 0.0)
+				continue;
+			v = v * v * v;
+			double u = unit();
+			if (u < 1.0 - 0.0331 * x * x * x * x || std::log(std::max(u, 1e-12)) < 0.5 * x * x + d * (1.0 - v + std::log(v)))
+				return d * v;
+		}
+	}
 };
 
 struct Node {
@@ -382,6 +400,24 @@ Result search(const State &s0, const Net &net, const Params &p) {
 	if (p.gumbel)
 		for (size_t i = 0; i < k; i++)
 			g[i] = rng.gumbel();
+	if (p.dirichlet_eps > 0.0 && k > 1) {   // 디리클레 뿌리 잡음 — 후보 고르기 점수(g)에만 섞는다 (학습 목표 π'는 r.logits 그대로)
+		std::vector<double> pr(k), dir(k);
+		double mx = -1e30, sum = 0.0, dsum = 0.0;
+		for (size_t i = 0; i < k; i++)
+			mx = std::max(mx, double(r0.logits[i]));
+		for (size_t i = 0; i < k; i++) {
+			pr[i] = std::exp(double(r0.logits[i]) - mx);
+			sum += pr[i];
+			dir[i] = rng.gamma(p.dirichlet_alpha);
+			dsum += dir[i];
+		}
+		for (size_t i = 0; i < k; i++) {
+			pr[i] /= sum;
+			dir[i] /= std::max(dsum, 1e-12);
+			double mixed = (1.0 - p.dirichlet_eps) * pr[i] + p.dirichlet_eps * dir[i];
+			g[i] += std::log(std::max(mixed, 1e-12)) - std::log(std::max(pr[i], 1e-12));
+		}
+	}
 	// 뿌리 후보: logit + g 상위 m개 → 순차 반감
 	std::vector<int> cand(k);
 	for (size_t i = 0; i < k; i++)
@@ -462,12 +498,14 @@ Result search(const State &s0, const Net &net, const Params &p) {
 
 // ---------- 자가대전 기보 ----------
 void selfplay(const Net &net, int games, int sims, unsigned long long seed, int temp_moves, double lam,
-		std::vector<Rec> &out, GenStats &st, int fast_sims, double full_frac) {
+		std::vector<Rec> &out, GenStats &st, int fast_sims, double full_frac, double rand_draft_frac) {
 	Params prm;
+	prm.dirichlet_eps = 0.25;   // 자가대전만 탐험 잡음 (알파제로 ε 0.25 · α 0.3) — 아레나·게임은 Params 기본값 0
 	std::vector<Rec> recs;
 	std::vector<int> mover;
 	for (int g = 0; g < games; g++) {
 		Rng rng(seed * 1000003ull + g);
+		bool rand_draft = rand_draft_frac > 0.0 && rng.unit() < rand_draft_frac;   // 이 판은 선발·배치를 무작위로
 		State s;
 		new_open_match(s, g % 2 == 0 ? HOME : AWAY);
 		recs.clear();
@@ -519,7 +557,9 @@ void selfplay(const Net &net, int games, int sims, unsigned long long seed, int 
 			recs.push_back(rec);
 			mover.push_back(s.turn_team);
 			Action a = r.action;
-			if (ply < temp_moves) {
+			if (rand_draft && s.phase == PLACEMENT) {
+				a = r.acts[size_t(rng.next() % r.acts.size())];   // 무작위 선발·배치 (정책 목표는 탐색 것 그대로)
+			} else if (ply < temp_moves) {
 				double u = rng.unit();
 				for (size_t i = 0; i < r.acts.size(); i++) {
 					u -= r.policy[i];

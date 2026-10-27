@@ -66,6 +66,9 @@ struct Params {
 	unsigned long long seed = 1;
 	// **난이도 손잡이** (게임용 — 학습·아레나는 0)
 	int sample_top = 0;             // >0 이면 개선 정책 상위 k개 중에서 뽑는다 (쉬움 — 최선 수만 두지 않는다)
+	// **디리클레 뿌리 잡음** (알파제로 표준 탐험 — 2026-10-27 자가학습 정체 대책): 뿌리 사전확률을 (1−ε)·p + ε·Dir(α)로 흩어
+	// 안 둬 본 수도 파 보게 한다. 후보 고르기(순차 반감)에만 섞고 학습 목표 π'는 깨끗이 둔다. 기본 0 = 꺼짐 (아레나·게임). selfplay가 켠다
+	double dirichlet_eps = 0.0, dirichlet_alpha = 0.3;
 };
 
 struct Result {
@@ -102,8 +105,10 @@ struct GenStats {
 // **탐색 상한 무작위**(KataGo 'playout cap randomization', 2026-10-22): fast_sims > 0 이면 수마다 full_frac 확률로만
 // sims회 풀탐색을 하고 그 국면만 정책 목표를 적는다(pi_idx). 나머지 수는 fast_sims회로 빨리 두고 가치 목표(z·aux)만 남긴다
 // — 같은 시간에 판이 3~4배 늘어 가치 학습이 좋아지고, 정책 목표는 풀탐색 것만 써서 질이 안 떨어진다
+// rand_draft_frac (2026-10-27): 그 비율의 판은 양팀 선발·배치 수를 합법 수 중 균일 무작위로 둔다 — 한 조합에 굳는 자기 복제를 막는다.
+// 탐색은 그대로 돌려 정책 목표(π')는 남기고, 실제로 두는 수만 바꾼다 (온도 수와 같은 꼴)
 void selfplay(const Net &net, int games, int sims, unsigned long long seed, int temp_moves, double lam,
-		std::vector<Rec> &out, GenStats &st, int fast_sims = 0, double full_frac = 1.0);
+		std::vector<Rec> &out, GenStats &st, int fast_sims = 0, double full_frac = 1.0, double rand_draft_frac = 0.0);
 
 } // namespace az
 } // namespace cf
