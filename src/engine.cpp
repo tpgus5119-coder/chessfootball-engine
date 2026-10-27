@@ -435,10 +435,16 @@ struct CRes {
 
 
 // resolve_with: 공격값 지정 (감쇠 — 5.0). 수비 값 = 제 스탯·태세·마커 + 협동 (v5.59)
+Observer *g_observer = nullptr;   // 분석용 관찰자 (engine.h) — 기본은 없음
+
 static CRes resolve_with(State &s, const Player &atk, int atk_value, const Player &def, int def_key,
 		V2 tile) {
-	int d = positional_stat(s, def, def_key) + coop(s, def, def_key, tile);
-	return { atk_value, d, tie_chain(s, atk_value, atk, d, def) };
+	int co = coop(s, def, def_key, tile);
+	int d = positional_stat(s, def, def_key) + co;
+	bool wins = tie_chain(s, atk_value, atk, d, def);
+	if (g_observer)
+		g_observer->contest(s, atk, def, def_key, co, wins, tile);
+	return { atk_value, d, wins };
 }
 
 static CRes resolve(State &s, const Player &atk, int atk_key, const Player &def, int def_key, V2 tile) {
@@ -875,6 +881,8 @@ static V2 dribble_run(State &s, int uid, const std::vector<V2> &path, bool speci
 		// **빈 칸 갱신이 경합보다 먼저다** (v5.21) — 진 그 칸까지 가서 거기 선다 (GDScript _dribble_contests와 같은 순서)
 		if (body == nullptr)
 			last_free = tile;
+		if (zone[idx(tile)] != -1 && !met[zone[idx(tile)]] && screened(s, s.players[uid], tile, path.back()) && g_observer)
+			g_observer->screen(s, s.players[uid], tile);   // 분석용 — 규칙과 무관
 		if (zone[idx(tile)] != -1 && !met[zone[idx(tile)]] && !screened(s, s.players[uid], tile, path.back())) {
 			met[zone[idx(tile)]] = true;
 			s.contest_used = 1;   // v5.79
@@ -1224,8 +1232,13 @@ static bool send_ball(State &s, const Player &p, const std::vector<V2> &path, in
 	bool met[PLAYERS] = { false };
 	for (const V2 &tile : path) {
 		int du = zone[idx(tile)];
-		if (du == -1 || met[du] || screened(s, p, tile, path.back()))
-			continue;   // v5.68 마커는 붙은 적과 안 겨룬다
+		if (du == -1 || met[du])
+			continue;
+		if (screened(s, p, tile, path.back())) {
+			if (g_observer)
+				g_observer->screen(s, p, tile);   // 분석용 — 규칙과 무관
+			continue;
+		}
 		met[du] = true;
 		s.contest_used = 1;   // v5.79
 		CRes c = resolve_with(s, p, atk, s.players[du], INT_, tile);
@@ -1356,8 +1369,13 @@ static bool do_shot_auto(State &s, int uid) {
 	bool met[PLAYERS] = { false };   // 한 선수와는 한 번만 (spec 5.8 v5.18)
 	for (const V2 &tile : path) {
 		int du = zone[idx(tile)];
-		if (du == -1 || met[du] || screened(s, *p, tile, path.back()))
+		if (du == -1 || met[du])
 			continue;
+		if (screened(s, *p, tile, path.back())) {
+			if (g_observer)
+				g_observer->screen(s, *p, tile);   // 분석용 — 규칙과 무관
+			continue;
+		}
 		met[du] = true;
 		s.contest_used = 1;   // v5.79
 		CRes c = resolve_with(s, *p, atk, s.players[du], INT_, tile);

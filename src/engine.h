@@ -158,6 +158,15 @@ struct Action {
 	int cost = -1;   // 옛 마에스트로 패스 단계 자리 (v5.68~v6.0) — v6.1부터 늘 −1 (기보·정책 칸 형식은 그대로 둔다)
 };
 
+// **분석용 관찰자** (tools/az/arena.cpp 기술 통계 — 2026-10-27): 경합이 해석될 때·스크린으로 경합이 생략될 때 알린다.
+// 규칙엔 아무 영향이 없고 nullptr이면 조용하다. 탐색(MCTS·미니맥스)도 apply를 부르므로 **실제로 두는 apply 둘레에서만** 켜라
+struct Observer {
+	virtual ~Observer() {}
+	virtual void contest(const State &s, const Player &atk, const Player &def, int def_key, int coop_bonus, bool atk_wins, V2 tile) {}
+	virtual void screen(const State &s, const Player &p, V2 tile) {}   // p(공 임자)의 길 위 상대 존 칸 tile을 아군이 가려 경합이 생략됐다
+};
+extern Observer *g_observer;
+
 // ai/action_space.gd — 열거(순서 고정)와 실행. apply는 결과 ok만 돌려준다 (상태가 곧 결과)
 void enumerate_actions(const State &s, std::vector<Action> &out);
 bool apply_action(State &s, const Action &a);
