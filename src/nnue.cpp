@@ -19,12 +19,12 @@ static inline void add(NetInput &in, int i) {
 void net_input(const State &s, int team, NetInput &in) {
 	in.n = 0;
 	const bool flip = team == AWAY; // 평가하는 팀이 늘 +x로 공격하게
-	bool drafted[NN_NPOS] = {};
+	bool drafted[2][NN_NPOS] = {};   // v7.1 팀별 — 상대와 겹쳐도 되므로 벤치는 팀마다 따로
 	for (const Player &q : s.players) {
 		int slot = pool_slot(q.position);
 		int sl = slot < 0 ? NN_NPOS - 1 : slot;
 		if (slot >= 0)
-			drafted[slot] = true;
+			drafted[q.team == team ? 0 : 1][slot] = true;
 		if (q.position < 0 || s.is_absent(q.uid))
 			continue; // 아직 드래프트 안 된 자리·결장
 		int rel = q.team == team ? 0 : 1;
@@ -42,9 +42,10 @@ void net_input(const State &s, int team, NetInput &in) {
 	}
 	if (s.loose_ball())
 		add(in, NN_OFF_LOOSE + (s.loose_team == team ? 0 : 1) * NT + nn_tile(s.ball_pos, flip));
-	for (int k = 0; k < POOL_N; k++)   // 아무도 안 가진 슬롯 전부 (종전엔 마지막 슬롯이 빠졌다)
-		if (!drafted[k])
-			add(in, NN_OFF_BENCH + k);
+	for (int r = 0; r < 2; r++)   // 그 팀에 아직 없는 슬롯 (v7.1 팀별 — rel 0 = 평가하는 팀)
+		for (int k = 0; k < POOL_N; k++)
+			if (!drafted[r][k])
+				add(in, NN_OFF_BENCH + r * POOL_N + k);
 	for (const Player &q : s.players)   // v6.4 마커에게 잡힌 선수 (옛 수동 잡기 칸을 물려받았다 — 칸 수 같음)
 		if (marked(s, q))
 			add(in, NN_OFF_GRAB + (q.team == team ? 0 : 1) * NT + nn_tile(q.pos, flip));

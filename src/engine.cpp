@@ -281,9 +281,10 @@ static int placement_team(const State &s) {
 	return team_at(s, s.placement_index);
 }
 
-static bool is_drafted(const State &s, int position) {
+// v7.1: 그 팀에 이미 있는가 — 상대와 겹쳐도 된다 (game_state.gd is_drafted)
+static bool is_drafted(const State &s, int position, int team) {
 	for (int u = 0; u < PLAYERS; u++)
-		if (s.players[u].position == position)
+		if (s.players[u].team == team && s.players[u].position == position)
 			return true;
 	return false;
 }
@@ -312,7 +313,7 @@ static void skip_empty_slots(State &s) {
 
 // 지금 차례에 이 슬롯을 고를 수 있는가: 처음 배치는 벤치(드래프트), 재배치는 아직 안 놓은 내 선수의 포지션
 static bool slot_open(const State &s, int team, int slot) {
-	return s.redeploy ? unplaced_with(s, team, DRAFT_POOL[slot]) != -1 : !is_drafted(s, DRAFT_POOL[slot]);
+	return s.redeploy ? unplaced_with(s, team, DRAFT_POOL[slot]) != -1 : !is_drafted(s, DRAFT_POOL[slot], team);
 }
 
 static bool commit_place(State &s, int uid, int position, V2 tile) {
