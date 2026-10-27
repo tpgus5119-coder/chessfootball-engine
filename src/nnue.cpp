@@ -38,7 +38,7 @@ void net_input(const State &s, int team, NetInput &in) {
 			add(in, NN_OFF_STANCE + rel * NT + tile);
 		if (s.ball_owner_uid == q.uid)
 			add(in, NN_OFF_BALL + rel * NT + tile);
-		add(in, NN_OFF_STA + (rel * 4 + std::max(0, std::min(q.sta, 3))) * NT + tile);   // v5.86 체력
+		add(in, NN_OFF_STA + (rel * NN_STA_K + std::max(0, std::min(q.sta, STA_MAX))) * NT + tile);   // 체력 0~2 (v7.0)
 	}
 	if (s.loose_ball())
 		add(in, NN_OFF_LOOSE + (s.loose_team == team ? 0 : 1) * NT + nn_tile(s.ball_pos, flip));

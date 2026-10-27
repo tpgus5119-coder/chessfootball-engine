@@ -25,8 +25,9 @@ constexpr int NN_OFF_LOOSE = NN_OFF_BALL + 2 * NT;  // 루즈볼 칸 (rel = 놓�
 constexpr int NN_OFF_UNPLACED = NN_OFF_LOOSE + 2 * NT; // 아직 판에 없는 선수 (rel·NPOS + slot)
 constexpr int NN_OFF_BENCH = NN_OFF_UNPLACED + 2 * NN_NPOS; // 아무도 안 가진 드래프트 슬롯
 constexpr int NN_OFF_GRAB = NN_OFF_BENCH + POOL_N; // v5.80 마커에게 붙잡힌 선수가 선 칸 (rel = 붙잡힌 선수의 팀)
-constexpr int NN_OFF_STA = NN_OFF_GRAB + 2 * NT;  // v5.86 체력: (rel·4 + 체력 0~3)·70 + 선 칸
-constexpr int NN_SPARSE = NN_OFF_STA + 2 * 4 * NT;
+constexpr int NN_STA_K = STA_MAX + 1;              // v7.0 체력 칸 0~2 = 3칸 (사용자 "체력 2칸으로 수정해야지 낭비하지 말고" — 옛 0~3 네 칸)
+constexpr int NN_OFF_STA = NN_OFF_GRAB + 2 * NT;  // 체력: (rel·K + 체력)·70 + 선 칸
+constexpr int NN_SPARSE = NN_OFF_STA + 2 * NN_STA_K * NT;
 constexpr int NN_DENSE = 22;   // 전역 16 + 손으로 만든 전술 단서 6 (eval.gd features). v5.86~v5.94의 기세 2칸은 v5.95에 뺐다
 constexpr int NN_MAX_ACTIVE = 64;   // v5.86: 선수당 최대 4칸(자리·태세·공·체력) × 10 + 루즈볼·벤치 11·잡기 2 = 54
 
