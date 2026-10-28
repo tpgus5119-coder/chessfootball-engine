@@ -1198,7 +1198,7 @@ static void pass_ctx(const State &s, const Player &p, PassCtx &ctx) {
 		open[i] = false;
 	Reach air;
 	bool air_done = false;
-	if (ctx.rng >= LONG_PASS_MIN && sta_ok(s, p)) {   // 롱패스는 체력 1 (v7.0)
+	if (ctx.rng >= LONG_PASS_MIN) {   // 롱패스도 체력 0 (v7.3)
 		// 공중볼만 몸 위로 넘어간다 — 그래서 벽을 빼고 다시 한 번 훑는다 (GDScript와 같은 예외)
 		reach(s, p, ctx.rng, ctx.dirs, true, open, UNSET, air, true);
 		air_done = true;
@@ -1211,7 +1211,7 @@ static void pass_ctx(const State &s, const Player &p, PassCtx &ctx) {
 	(void)air_done;
 	// v5.37: 패스는 박스를 **지나갈 수는 있지만 멈추지는 못한다** — 박스 칸은 목적지에서 뺀다 (GDScript와 같은 순서 유지)
 	Reach keep;
-	bool far_ok = sta_ok(s, p);   // 5칸 이상은 전부 공중볼 — 체력이 없으면 땅길로 닿은 5칸도 표적이 아니다 (v7.0 롱패스 체력 1)
+	bool far_ok = true;   // v7.3 롱패스도 체력 0 — 5칸 표적은 늘 된다
 	for (int i = 0; i < ctx.dist.n; i++) {
 		V2 t = ctx.dist.order[i];
 		if (!is_any_box(t) && (far_ok || manhattan(p.pos, t) < LONG_PASS_MIN))
@@ -1294,8 +1294,6 @@ static bool do_pass_to(State &s, int uid, V2 dest) {
 		return false;
 	}
 	bool long_pass = manhattan(p->pos, dest) >= LONG_PASS_MIN;
-	if (long_pass && !sta_ok(s, *p))
-		return false;   // 롱패스는 체력 1 (v7.0)
 	bool aerial = long_pass;   // 공중볼 = 롱패스. 낙하 칸에서만 경합한다
 	std::vector<V2> path;
 	if (aerial)
@@ -1313,7 +1311,7 @@ static bool do_pass_to(State &s, int uid, V2 dest) {
 	int team = p->team;
 	if (s.ball_owner_uid == -1)
 		s.set_ball_owner(uid); // 킥오프 패스 — 공은 이 선수에게서 출발한다 (spec 3.2 v5.14)
-	bool intercepted = send_ball(s, *p, path, PAS, 0, long_pass ? STA_ACT : 0);
+	bool intercepted = send_ball(s, *p, path, PAS);
 	if (!intercepted) {
 		if (receiver_uid != -1) {
 			s.set_ball_owner(receiver_uid);
