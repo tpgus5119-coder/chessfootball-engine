@@ -107,8 +107,11 @@ struct GenStats {
 // — 같은 시간에 판이 3~4배 늘어 가치 학습이 좋아지고, 정책 목표는 풀탐색 것만 써서 질이 안 떨어진다
 // rand_draft_frac (2026-10-27): 그 비율의 판은 양팀 선발·배치 수를 합법 수 중 균일 무작위로 둔다 — 한 조합에 굳는 자기 복제를 막는다.
 // 탐색은 그대로 돌려 정책 목표(π')는 남기고, 실제로 두는 수만 바꾼다 (온도 수와 같은 꼴)
+// cup_frac (2026-10-28): 무작위 선발이 아닌 판 중 그 비율은 **컵처럼 정해진 선수단** — 판 시작에 풀을 섞어 양팀에 5종씩 미리 나눠 주고
+// 선발은 그 안에서만 고른다(칸 고르기는 탐색 그대로). 드래프트 규칙(양팀 중복 금지, v7.2)을 지키므로 두 선수단은 겹치지 않는다
 void selfplay(const Net &net, int games, int sims, unsigned long long seed, int temp_moves, double lam,
-		std::vector<Rec> &out, GenStats &st, int fast_sims = 0, double full_frac = 1.0, double rand_draft_frac = 0.0);
+		std::vector<Rec> &out, GenStats &st, int fast_sims = 0, double full_frac = 1.0, double rand_draft_frac = 0.0,
+		double cup_frac = 0.0);
 
 } // namespace az
 } // namespace cf

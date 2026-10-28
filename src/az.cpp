@@ -498,7 +498,7 @@ Result search(const State &s0, const Net &net, const Params &p) {
 
 // ---------- 자가대전 기보 ----------
 void selfplay(const Net &net, int games, int sims, unsigned long long seed, int temp_moves, double lam,
-		std::vector<Rec> &out, GenStats &st, int fast_sims, double full_frac, double rand_draft_frac) {
+		std::vector<Rec> &out, GenStats &st, int fast_sims, double full_frac, double rand_draft_frac, double cup_frac) {
 	Params prm;
 	prm.dirichlet_eps = 0.25;   // 자가대전만 탐험 잡음 (알파제로 ε 0.25 · α 0.3) — 아레나·게임은 Params 기본값 0
 	std::vector<Rec> recs;
@@ -506,6 +506,17 @@ void selfplay(const Net &net, int games, int sims, unsigned long long seed, int 
 	for (int g = 0; g < games; g++) {
 		Rng rng(seed * 1000003ull + g);
 		bool rand_draft = rand_draft_frac > 0.0 && rng.unit() < rand_draft_frac;   // 이 판은 선발·배치를 무작위로
+		bool cup = !rand_draft && cup_frac > 0.0 && rng.unit() < cup_frac;       // 이 판은 정해진 선수단 (az.h cup_frac)
+		bool squad[2][POOL_N] = {};
+		if (cup) {
+			int perm[POOL_N];
+			for (int i = 0; i < POOL_N; i++)
+				perm[i] = i;
+			for (int i = POOL_N - 1; i > 0; i--)
+				std::swap(perm[i], perm[int(rng.next() % (unsigned long long)(i + 1))]);
+			for (int i = 0; i < POOL_N; i++)
+				squad[i < POOL_N / 2 ? HOME : AWAY][perm[i]] = true;
+		}
 		State s;
 		new_open_match(s, g % 2 == 0 ? HOME : AWAY);
 		recs.clear();
@@ -559,6 +570,17 @@ void selfplay(const Net &net, int games, int sims, unsigned long long seed, int 
 			Action a = r.action;
 			if (rand_draft && s.phase == PLACEMENT) {
 				a = r.acts[size_t(rng.next() % r.acts.size())];   // 무작위 선발·배치 (정책 목표는 탐색 것 그대로)
+			} else if (cup && s.phase == PLACEMENT && !(a.t == A_PLACE && a.uid >= 0 && a.uid < POOL_N && squad[s.turn_team][a.uid])) {
+				// 정해진 선수단 밖의 슬롯이면 — 선수단 안의 배치 수 중 탐색이 가장 높게 친 것으로 (칸은 탐색 몫)
+				int best = -1;
+				for (size_t i = 0; i < r.acts.size(); i++) {
+					const Action &c = r.acts[i];
+					if (c.t == A_PLACE && c.uid >= 0 && c.uid < POOL_N && squad[s.turn_team][c.uid] &&
+							(best < 0 || r.policy[i] > r.policy[size_t(best)]))
+						best = int(i);
+				}
+				if (best >= 0)
+					a = r.acts[size_t(best)];
 			} else if (ply < temp_moves) {
 				double u = rng.unit();
 				for (size_t i = 0; i < r.acts.size(); i++) {

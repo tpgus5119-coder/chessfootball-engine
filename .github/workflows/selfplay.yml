@@ -40,7 +40,7 @@ jobs:
           NET=champion.bin; [ -f "$NET" ] || NET=-
           N=$(nproc)
           for i in $(seq 0 $((N-1))); do
-            ./gen "rec_${{ matrix.k }}_$i.bin" "${{ github.event.inputs.games }}" "${{ github.event.inputs.sims }}" "$(( ${{ github.run_number }} * 10000 + ${{ matrix.k }} * 100 + i ))" "$NET" 12 0.7 "${{ github.event.inputs.fast }}" "${{ github.event.inputs.frac }}" &
+            ./gen "rec_${{ matrix.k }}_$i.bin" "${{ github.event.inputs.games }}" "${{ github.event.inputs.sims }}" "$(( ${{ github.run_number }} * 10000 + ${{ matrix.k }} * 100 + i ))" "$NET" 12 0.7 "${{ github.event.inputs.fast }}" "${{ github.event.inputs.frac }}" 0.5 0.2 &   # 무작위 선발 50% · 컵형 고정 선수단 20% (loop.py와 같게)
           done
           wait
           ls -la rec_*.bin
