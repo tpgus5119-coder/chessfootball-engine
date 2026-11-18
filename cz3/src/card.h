@@ -12,7 +12,9 @@ namespace cf {
 namespace card {
 
 
-constexpr int CARD_HALF_TURNS = 50;   // 카드 모드 반 = 팀당 25턴 (사용자 2026-11-06) · 옛 20턴 (사용자 2026-11-04 — 본편 HALF_TURNS 60과 따로)
+constexpr int CARD_HALF_TURNS = 50;
+extern int g_half_turns;   // 반 길이(두 팀 합 차례) — 기본 CARD_HALF_TURNS · 자가학습만 CF_HALF_TURNS 로 바꾼다 (11-18 사용자 「전반 100턴·후반 100턴」)
+   // 카드 모드 반 = 팀당 25턴 (사용자 2026-11-06) · 옛 20턴 (사용자 2026-11-04 — 본편 HALF_TURNS 60과 따로)
 enum CardType { C_KICK = 0, C_MOVE = 1, C_DEF = 2 };
 enum Role { R_ATK = 0, R_DEF = 1 };   // 공 가진 팀 = 킥·이동 · 아닌 팀 = 수비·이동
 // 전술카드 9종 (v8.2 — HP 깎기·바꿔 들기 뺌). 화면 이름: 프리롤·로테이션·봉쇄·압박·리플레이·닥공·강슛·숨 고르기·육탄방어

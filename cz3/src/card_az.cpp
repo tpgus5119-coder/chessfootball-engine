@@ -128,7 +128,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[0] = s.phase == PLACEMENT;
 	d[1] = s.phase == PLAY;
 	d[2] = float(eff_hold(s)) / 5.0f;   // 공 임자가 태클을 버티는 힘 (v9.0 — 옛 「후반인가」 자리)
-	d[3] = float(std::max(0, std::min(s.half_turn(), CARD_HALF_TURNS))) / float(CARD_HALF_TURNS);   // 이 반의 진행 (v10 — 반은 골이 나면 일찍 끝난다)
+	d[3] = float(std::max(0, std::min(s.half_turn(), g_half_turns))) / float(g_half_turns);   // 이 반의 진행 비율 (v10 — 반은 골이 나면 일찍 끝난다 · 11-18 비율이라 반 길이를 바꿔 배워도 25턴 경기에 쓰인다)
 	d[4] = float(s.goals[team]) / 2.0f;   // v10 — HP 대신 골
 	d[5] = float(s.goals[opp]) / 2.0f;
 	d[6] = float(s.lost[opp] - s.lost[team]) / 120.0f;   // 골 숫자 합 차 (골이 같으면 이걸로 갈린다 — v17 슛 힘 × 괄호 합이라 나누는 수 40 → 120)

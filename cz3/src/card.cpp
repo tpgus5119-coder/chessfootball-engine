@@ -785,7 +785,9 @@ int g_keeper_carry = 0;
 void knobs_from_env() {
 	auto num = [](const char *k, int &v) { if (const char *e = getenv(k)) v = atoi(e); };
 	num("CF_KEEPER_HP", g_keeper_hp);
+	num("CF_HALF_TURNS", g_half_turns);   // 자가학습만 (11-18 사용자: 반 100턴씩 — 실제 게임은 CARD_HALF_TURNS 그대로)
 }
+int g_half_turns = CARD_HALF_TURNS;
 // 0:0 끝의 AI 가치. 11-09 사용자 「0대0하면 손해라고 인식해라」로 −1 이었으나 11-11 0 으로 되돌림:
 // 탐색은 상대 마디 값을 부호만 바꿔 올린다(제로섬). 「양쪽 다 −1」은 상대 쪽에서 +1 로 뒤집혀, 공을 안 가진 팀이 0:0 을 노리게 배웠다
 // (11-09 갈래 0:0 86% vs 본 76% · 11-10 v16 이어 배우기가 0:0 28%→55% 로 퇴보). 0 이어도 이기면 +1 이라 AI 는 이기려 한다.
@@ -834,7 +836,7 @@ static bool end_half(State &s) {
 }
 
 static bool clock(State &s) {
-	return s.half_turn() >= CARD_HALF_TURNS && end_half(s);
+	return s.half_turn() >= g_half_turns && end_half(s);
 }
 
 void end_turn(State &s) {
