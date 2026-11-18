@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       games:
-        description: "프로세스당 판수"
-        default: "6"
+        description: "프로세스당 판수 (반 100턴 판 — 작업 하나 30분 안쪽, 11-18)"
+        default: "2"
       sims:
         description: "풀탐색 횟수"
         default: "2304"
@@ -22,7 +22,7 @@ permissions:
 jobs:
   gen:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:

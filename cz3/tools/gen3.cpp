@@ -7,7 +7,7 @@
 //   학습 방법: 위아래 뒤집기 CF_FLIP(기본 0.5) · 나무 재사용 CF_REUSE(기본 1) · 판 중간 시작 CF_BRANCH(기본 0.15 — 가치가 크게 틀린 국면·골 직전·공 뺏긴 직후)
 //   판 꼴은 gen.cpp 와 같다: 35 % 정해진 선수단 · 덱 섞기(15 % 모든 칸 · 10 % 없음 · 나머지 0.6) · 앞 12수 온도 표본 · λ 0.7 · 보조 머리(공 얻음·잃음·골) 그대로
 //   측정 (stderr): 공격 한 번 길이(공을 얻음 → 골·막힌 슛·공 잃음, 차례 수) · 골문 깎이기 시작 → 골 차례 수 — 수읽기 깊이 목표의 근거 (11-18)
-#include "../src/card_duel.h"
+#include "../../gdext/src/card_duel.h"
 #include "deck.h"
 #include "flip.h"
 #include "tri.h"
@@ -130,6 +130,7 @@ int main(int argc, char **argv) {
 	}
 	const double ko_frac = envf("CF_KO", 0.5), flip_frac = envf("CF_FLIP", 0.5), branch_frac = envf("CF_BRANCH", 0.15);
 	const bool reuse_on = envf("CF_REUSE", 1.0) != 0.0;
+	const double lam = envf("CF_LAMBDA", 0.7);   // 가치 목표 = λ·결과 + (1−λ)·탐색 값 (설정 찾기 11-18)
 	const double miss_v = envf("CF_BRANCH_MISS", 1.0);   // |가치 예측 − 실제 결과| 가 이만큼 넘으면 「크게 틀림」
 	tri::Params base;
 	tri::params_from_env(base);
@@ -319,7 +320,7 @@ int main(int argc, char **argv) {
 		for (size_t i = 0; i < mover.size(); i++) {
 			const double z = win == -1 ? 0.0 : (win == mover[i] ? 1.0 : -1.0);
 			tri::Rec &r = out[r0 + i];
-			r.z = float(0.7 * z + 0.3 * r.q), r.aux = trk[i];
+			r.z = float(lam * z + (1.0 - lam) * r.q), r.aux = trk[i];
 			if (std::fabs(qv[i] - z) > miss_v && hist[i].phase == cf::PLAY && rb.next() % (unsigned long long)(++snap_n[0]) == 0)
 				pool[0][0] = Snap{ hist[i], 0 };
 		}
