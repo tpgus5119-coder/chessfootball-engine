@@ -28,7 +28,6 @@ static void emit(const Event &e) {
 		g_events->push_back(e);
 }
 
-enum Use { U_PASS, U_SHOT, U_MOVE, U_DRIBBLE, U_STANCE };
 
 // ---------- 직업 스킬 (11-14 사용자 — 컵 커리어만, set_career) ----------
 // 패시브만: 월·타이탄·마커·부스터·노마드 (「## 3」 능력 그대로). 액티브만: 캐논(킥 힘)·마에스트로(킥 범위)·트릭스터(이동 힘)·스프린터(이동 범위)·헌터(수비 힘) —
@@ -371,6 +370,13 @@ static int rng_of(const State &s, const Player &p, int card, int want, int skl =
 }
 
 // 스킬 보정을 더한 힘 — **늘 1 이상** (사용자 2026-11-07 「스탯 0 금지」). 범위는 rng_of 만 바꾼다
+// 버티는 힘 = 기본 카드 숫자 (11-18 사용자 — 전술카드·스킬·스탯 ± 를 뺀 카드에 적힌 숫자. 판정 힘은 sk_stat 그대로)
+static int hold_num(const State &s, int team, int card) {
+	int ty, val;
+	card_info(s, team, card, ty, val);
+	return val;
+}
+
 static int sk_stat(const State &s, const Player &p, int card, int want, int use, V2 dest) {
 	int ty, val;
 	card_info(s, p.team, card, ty, val);
@@ -427,6 +433,8 @@ static int sk_stat(const State &s, const Player &p, int card, int want, int use,
 	const int skp = sk_power(p.position, s.sk_passive ? 1 : s.sk_uid == p.uid ? s.sk_kind : 0, want, use) ? g_skill_pow : 0;   // 시험판 패시브 = 늘 켬
 	return std::max(1, eff_stat(s, p, w2, val) + d + extra + jk + skp);
 }
+
+int card_power(const State &s, const Player &p, int card, int want, int use, V2 dest) { return sk_stat(s, p, card, want, use, dest); }
 
 static bool sk_pay_ok(const State &s, int sk) { return s.pts >= sk_cost(sk); }
 
@@ -1331,7 +1339,7 @@ static bool do_move(State &s, int uid, V2 dest, int card) {
 		return false;
 	bool blocked[NT];
 	body_blocked(s, p.team, blocked);
-	const int mv_pow0 = sk_stat(s, p, card, C_MOVE, U_MOVE, dest);
+	const int mv_pow0 = sk_stat(s, p, card, C_MOVE, U_MOVE, dest), mv_hold = hold_num(s, p.team, card);
 	std::vector<V2> path = g_path ? route(p.pos, dest, rng_of(s, p, card, C_MOVE), nullptr, blocked, UNSET) : move_path(s, p, dest, rng_of(s, p, card, C_MOVE), mv_pow0, blocked);
 	if (path.empty())
 		return false;
@@ -1356,8 +1364,8 @@ static bool do_move(State &s, int uid, V2 dest, int card) {
 	if (pk >= 0) {   // 루즈볼 줍기 — 남은 걸음은 같은 카드의 드리블
 		set_owner(s, uid);
 		const int mv_pow = mv_pow0;
-		s.rb_move[team] = 0;
-		s.hold = mv_pow;
+		s.rb_kick[team] = s.rb_move[team] = 0;   // 킬패스 +1 은 다음 한 장 (11-18)
+		s.hold = mv_hold;   // 버티는 힘 = 기본 카드 숫자 (11-18)
 		mark_hold(s);
 		s.players[uid].pos = path[size_t(pk)];
 		if (size_t(pk) + 1 < path.size())
@@ -1414,15 +1422,15 @@ static bool do_dribble(State &s, int uid, V2 dest, int card) {
 	s.left_from[uid] = p.pos;
 	if (s.ball_owner == -1)
 		set_owner(s, uid);   // 킥오프 — 이 선수가 공을 갖고 시작한다
-	const int dr_pow = sk_stat(s, p, card, C_MOVE, U_DRIBBLE, dest);
-	s.rb_move[team] = 0;
+	const int dr_pow = sk_stat(s, p, card, C_MOVE, U_DRIBBLE, dest), dr_hold = hold_num(s, p.team, card);
+	s.rb_kick[team] = s.rb_move[team] = 0;   // 킬패스 +1 은 다음 한 장 (11-18)
 	pay_point(s);
 	if (sk_cost(sk) == 2)
 		pay_point(s);
 	spend(s, p, card);
 	s.players[uid].pos = dribble_run(s, uid, dr_pow, path);
 	if (s.ball_owner == uid)
-		s.hold = dr_pow;   // 드리블한 숫자로 버틴다
+		s.hold = dr_hold;   // 드리블한 카드의 기본 숫자로 버틴다 (11-18 — ± 없음)
 		mark_hold(s);
 	if (s.ball_team() == team) {
 		combo_card(s, team, sk, val);
@@ -1522,8 +1530,8 @@ static bool do_pass(State &s, int uid, V2 dest, int card) {
 	emit({ 4, uid, card, dest, val, aerial ? 1 : 0, 0, path });
 	if (s.ball_owner == -1)
 		set_owner(s, uid);
-	const int ps_pow = sk_stat(s, p, card, C_KICK, U_PASS, dest);
-	s.rb_kick[team] = 0;
+	const int ps_pow = sk_stat(s, p, card, C_KICK, U_PASS, dest), ps_hold = hold_num(s, p.team, card);
+	s.rb_kick[team] = s.rb_move[team] = 0;   // 킬패스 +1 은 다음 한 장 (11-18)
 	pay_point(s);
 	if (sk_cost(sk) == 2)
 		pay_point(s);
@@ -1531,7 +1539,7 @@ static bool do_pass(State &s, int uid, V2 dest, int card) {
 	if (!send_ball(s, p, ps_pow, path)) {
 		if (ru != -1) {
 			set_owner(s, ru);
-			s.hold = ps_pow;   // 받은 패스의 숫자로 버틴다
+			s.hold = ps_hold;   // 받은 패스 카드의 기본 숫자로 버틴다 (11-18 — ± 없음)
 			mark_hold(s);
 		} else {
 			drop_ball(s, dest, team);
@@ -1544,9 +1552,9 @@ static bool do_pass(State &s, int uid, V2 dest, int card) {
 			s.combo[team] += 1;
 		if (g_class_combo && s.players[uid].position == MAESTRO)
 			s.combo[team] += 1;
-		if (sk == K_KILL)
-			s.rb_kick[team] = 1;
-		if (sk == K_RUN)
+		if (sk == K_KILL)   // 킬패스 (11-18 스루패스와 합침): 받은 아군 다음 카드 +1 — 킥이든 이동(드리블·루즈볼 줍기)이든 먼저 내는 한 장
+			s.rb_kick[team] = s.rb_move[team] = 1;
+		if (sk == K_RUN)   // 뺀 카드 (11-18) — 옛 저장·망 칸 호환
 			s.rb_move[team] = 1;
 		if ((dest.x - s.players[uid].pos.x) * forward_dir(team) > 0)
 			rep_add(s, uid, MAESTRO);   // 대표 행동 — 전진 패스 성공 (11-13)
@@ -1637,7 +1645,7 @@ static bool do_shot(State &s, int uid, int card) {
 	emit({ 4, uid, card, goal, val, 2, 0, path });
 	int pow = sk_stat(s, p, card, C_KICK, U_SHOT, goal);   // 슛 길 경합의 힘 = 데미지 힘 (v17)
 	const int ctr = counter_bonus(s, team);   // 슛하는 순간의 공 위치로 (새 손을 받기 전)
-	s.rb_kick[team] = 0;
+	s.rb_kick[team] = s.rb_move[team] = 0;   // 킬패스 +1 은 다음 한 장 (11-18)
 	pay_point(s);
 	if (sk_cost(sk) == 2)
 		pay_point(s);
@@ -1874,11 +1882,11 @@ int stam_cost(int sk) { return sk == K_EASY || sk == M_BREATH || sk == D_EASE ? 
 // 시험판 덱 화면이 고르는 카드 = 게임 카드 목록 그대로 (core/career.gd KICK_CARDS·MOVE_CARDS·DEF_CARDS — 뺀 12장 5·9·10·14·20·28·31·34·39·43·45·47 없음,
 // tests/test_card_ai.gd 가 두 목록이 같은지 본다). 그 숫자에 못 붙는 카드(skill_fits — MOVE_MINUS·MOVE_SHORT 칸 규칙)는 뺀다
 static const int TRIAL_POOL[3][13] = {
-	{ K_SHOT_UP, K_PASS_UP, K_LONG, K_HEAVY, K_KILL, K_RUN, K_DIRECT, K_BUILD, K_STRIKER, K_TEAM, K_COUNTER, K_KEEP, K_EASY },
-	{ M_OFF, M_TRICK, M_DASH, M_SHORT, M_STRAIGHT, M_SIDE, M_ALONE, M_ESCAPE, M_BOX, M_COUNTER, M_RETURN, M_KEEP, M_BREATH },
-	{ D_WALL, D_WIDE, D_FRONT, D_SIDE, D_LAST, D_LOW, D_HIGH, D_REGAIN, D_EASE, 0, 0, 0, 0 },
+	{ K_SHOT_UP, K_PASS_UP, K_LONG, K_HEAVY, K_KILL, K_DIRECT, K_BUILD, K_STRIKER, K_TEAM, K_COUNTER, K_KEEP, K_EASY, 0 },
+	{ M_DASH, M_SHORT, M_STRAIGHT, M_SIDE, M_ALONE, M_ESCAPE, M_BOX, M_COUNTER, M_KEEP, M_BREATH, 0, 0, 0 },
+	{ D_WALL, D_WIDE, D_FRONT, D_LAST, D_LOW, D_HIGH, D_REGAIN, D_EASE, 0, 0, 0, 0, 0 },
 };
-static const int TRIAL_POOL_N[3] = { 13, 13, 9 };
+static const int TRIAL_POOL_N[3] = { 12, 10, 8 };   // 30장 (11-18 사용자 — 35장에서 5장 뺌)
 
 int trial_deck_options(int kind, int value, int out[13]) {
 	int n = 0;

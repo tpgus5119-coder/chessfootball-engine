@@ -24,9 +24,9 @@ inline int kind_of(int sk) {
 }
 
 inline Deck from_env() {
-	static const int GAME[] = { 1, 2, 3, 4, 6, 7, 8, 11, 12, 13, 15, 40, 42,   // career.gd KICK_CARDS
-		16, 17, 18, 19, 21, 22, 23, 24, 25, 26, 27, 41, 44,                      // MOVE_CARDS
-		29, 30, 32, 33, 35, 36, 37, 38, 46 };                                    // DEF_CARDS
+	static const int GAME[] = { 1, 2, 3, 4, 6, 8, 11, 12, 13, 15, 40, 42,   // career.gd KICK_CARDS (30장 — 11-18 7·16·17·27·33 뺌)
+		18, 19, 21, 22, 23, 24, 25, 26, 41, 44,                                // MOVE_CARDS
+		29, 30, 32, 35, 36, 37, 38, 46 };                                    // DEF_CARDS
 	Deck d;
 	const char *e = getenv("CF_DECK");
 	std::vector<int> all;

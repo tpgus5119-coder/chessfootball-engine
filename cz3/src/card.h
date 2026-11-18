@@ -44,9 +44,10 @@ enum Skill { SK_NONE = 0,
 	K_EASY, K_ALLOUT, M_BREATH, M_SPURT, D_EASE, D_DIVE, N_SKILL };
 // 망 입력은 체력 카드 전의 42장만 안다 (11-13 — 학습 중인 망 형식 그대로). 그 뒤 번호는 망에 「기본」으로 보인다
 constexpr int N_SKILL_NET = K_EASY;
-// 뺀 전술카드 9장 (사용자 2026-11-14): 덱·보상·AI 덱에 안 들어간다. 번호는 망 입력 칸 자리라 그대로 둔다
+// 뺀 전술카드 9장 (사용자 2026-11-14) + 5장 (11-18 — 16 오프더볼 · 17 드리블러 · 27 리커버리 · 33 측면 봉쇄 · 7 스루패스는 6 킬패스로 합침): 덱·보상·AI 덱에 안 들어간다. 번호는 망 입력 칸 자리라 그대로 둔다
 constexpr bool skill_removed(int sk) {
-	return sk == K_POWER || sk == K_ONE || sk == K_CORNER || sk == M_POWER || sk == D_BODY || sk == D_SAVE || sk == K_ALLOUT || sk == M_SPURT || sk == D_DIVE;
+	return sk == K_POWER || sk == K_ONE || sk == K_CORNER || sk == M_POWER || sk == D_BODY || sk == D_SAVE || sk == K_ALLOUT || sk == M_SPURT || sk == D_DIVE ||
+			sk == K_RUN || sk == M_OFF || sk == M_TRICK || sk == M_RETURN || sk == D_SIDE;
 }
 // 체력 (사용자 2026-11-13, 컵 커리어만): 카드를 낸 선수 −1 · 차례 동안 카드를 안 낸 선수는 그 차례 끝에 +1 (경기 시작 칸까지)
 constexpr int STAM_MAX = 3;
@@ -176,6 +177,8 @@ struct Action {
 
 // 카드 정보 — team이 card를 내면 무슨 종류·숫자인가
 void card_info(const State &s, int team, int card, int &type, int &value);
+enum Use { U_PASS, U_SHOT, U_MOVE, U_DRIBBLE, U_STANCE };   // 판정 힘의 쓰임
+int card_power(const State &s, const Player &p, int card, int want, int use, V2 dest);   // 판정 힘 (전술카드·스킬·스탯 ± 포함 — 버티는 힘은 기본 숫자, 11-18) · 시험용
 int card_range(const State &s, const Player &p, int card, int use = -1, int skl = 0);   // skl = Action.sk (만능은 1이어도 범위 스킬 2로 본다)   // use = 쓰임 (노마드가 바꿔 쓰면 바꾼 쪽, −1 = 카드 종류)
 int gk_card_value(const State &s, int team, int hand, int card);   // 키퍼 킥 숫자 (−1 = 못 냄, v15)
 int gk_kick_range(int value);
