@@ -13,6 +13,7 @@ namespace card {
 
 
 constexpr int CARD_HALF_TURNS = 50;
+extern int g_time_input;   // 0 = 망 입력에서 시간(반 진행·후반)을 0 으로 — 100턴 자가학습 동안 (11-18 사용자 정정: 시간을 모르고 「골 넣고 안 먹히기」만)
 extern int g_half_turns;   // 반 길이(두 팀 합 차례) — 기본 CARD_HALF_TURNS · 자가학습만 CF_HALF_TURNS 로 바꾼다 (11-18 사용자 「전반 100턴·후반 100턴」)
    // 카드 모드 반 = 팀당 25턴 (사용자 2026-11-06) · 옛 20턴 (사용자 2026-11-04 — 본편 HALF_TURNS 60과 따로)
 enum CardType { C_KICK = 0, C_MOVE = 1, C_DEF = 2 };

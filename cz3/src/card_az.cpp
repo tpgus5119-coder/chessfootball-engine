@@ -128,7 +128,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[0] = s.phase == PLACEMENT;
 	d[1] = s.phase == PLAY;
 	d[2] = float(eff_hold(s)) / 5.0f;   // 공 임자가 태클을 버티는 힘 (v9.0 — 옛 「후반인가」 자리)
-	d[3] = float(std::max(0, std::min(s.half_turn(), g_half_turns))) / float(g_half_turns);   // 이 반의 진행 비율 (v10 — 반은 골이 나면 일찍 끝난다 · 11-18 비율이라 반 길이를 바꿔 배워도 25턴 경기에 쓰인다)
+	d[3] = float(std::max(0, std::min(s.half_turn(), g_half_turns))) / float(g_half_turns);   // 이 반의 진행 비율 (v10 — 반은 골이 나면 일찍 끝난다)
 	d[4] = float(s.goals[team]) / 2.0f;   // v10 — HP 대신 골
 	d[5] = float(s.goals[opp]) / 2.0f;
 	d[6] = float(s.lost[opp] - s.lost[team]) / 120.0f;   // 골 숫자 합 차 (골이 같으면 이걸로 갈린다 — v17 슛 힘 × 괄호 합이라 나누는 수 40 → 120)
@@ -139,6 +139,8 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[11] = s.touch_team == team ? float(__builtin_popcount(unsigned(s.touch_mask))) / 5.0f : 0.0f;   // 우리 공격 가담 수 (v9.0 — 옛 「재배치」 자리, 이제 재배치가 없다)
 	d[12] = s.opener == team;
 	d[13] = s.half == 2;   // v10 — 후반 (옛 자리는 d[9]와 같은 킥오프였다)
+	if (!g_time_input)   // 시간 입력 끔 (11-18 — 100턴 자가학습 동안 · 25턴으로 돌아갈 때 켜고 짧게 이어 배움)
+		d[3] = d[13] = 0.0f;
 	for (int c = 0; c < 6; c++) {
 		d[14 + c] = float((s.hand[team] >> c) & 1);
 		d[20 + c] = float((s.hand[opp] >> c) & 1);
