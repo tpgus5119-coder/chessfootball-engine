@@ -43,6 +43,8 @@ jobs:
           CF_CPUCT: "0.6"
           CF_CROOT: "2.0"
           CF_FPU: "0.5"
+          CF_KO: "0"
+          CF_BRANCH: "0.3"
         run: |
           N=$(nproc)
           for i in $(seq 0 $((N-1))); do
