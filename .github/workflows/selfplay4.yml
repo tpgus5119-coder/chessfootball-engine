@@ -1,0 +1,80 @@
+name: selfplay4
+# 감독 모드 4대4 (11-21 규칙) 원격 기보 공장 — 20개 작업 × 코어 수 프로세스가 gen3 flat 모드로 자가대전.
+# 규칙 = cz4/src (맥 게임 저장소 gdext/src 와 같은 파일). 망 = release "champion4" 의 champion4.bin (flat 2048/512).
+# 기보 묶음 이름에 규칙 지문(cz4/src 10개 파일의 sha256 앞 10자)을 붙인다 — 맥(tools/az/gh.py sync4)은 지금 규칙과 지문이 같은 묶음만 받는다(옛 규칙 기보가 섞이지 않게).
+on:
+  workflow_dispatch:
+    inputs:
+      games:
+        description: "프로세스당 판수"
+        default: "20"
+      sims:
+        description: "풀탐색 횟수"
+        default: "256"
+      fast:
+        description: "빠른 탐색 횟수"
+        default: "24"
+      frac:
+        description: "풀탐색 비율"
+        default: "0.25"
+permissions:
+  contents: write
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        k: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: c++ -O3 -std=c++17 -march=native -ffp-contract=off cz4/tools/gen3.cpp cz4/src/card.cpp cz4/src/card_az.cpp cz4/src/card_duel.cpp cz4/src/engine.cpp cz4/src/nnue.cpp -o gen3
+      - name: champion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download champion4 -p champion4.bin -D .
+      - name: selfplay
+        env:
+          CF_FLAT_REC: "1"
+          CF_DRAW_W: "0.3"
+          CF_BRANCH: "0.3"
+          CF_KO: "0.5"
+          CF_MODE: "card"
+        run: |
+          N=$(nproc)
+          for i in $(seq 0 $((N-1))); do
+            ./gen3 "rec_${{ matrix.k }}_$i.bin" "${{ github.event.inputs.games }}" "${{ github.event.inputs.sims }}" "${{ github.event.inputs.fast }}" "${{ github.event.inputs.frac }}" "$(( ${{ github.run_number }} * 10000 + ${{ matrix.k }} * 100 + i + 9000000 ))" flat:champion4.bin flat:champion4.bin 0 2> "log_${{ matrix.k }}_$i.txt" &
+          done
+          wait
+          tail -n 1 log_*.txt
+          ls -la rec_*.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recs4-${{ github.run_id }}-${{ matrix.k }}
+          path: rec_*.bin
+          retention-days: 1
+  bundle:
+    needs: gen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: recs
+          pattern: recs4-${{ github.run_id }}-*
+          merge-multiple: true
+      - name: pack
+        run: |
+          RULES=$(cat cz4/src/card.cpp cz4/src/card.h cz4/src/card_az.cpp cz4/src/card_az.h cz4/src/card_duel.cpp cz4/src/card_duel.h cz4/src/engine.cpp cz4/src/engine.h cz4/src/nnue.cpp cz4/src/nnue.h | sha256sum | cut -c1-10)
+          echo "RULES=$RULES" >> $GITHUB_ENV
+          cat recs/*.bin | xz -6 -T0 > recs4-${{ github.run_id }}-$RULES.bin.xz
+          ls -la recs4-*.bin.xz
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          R=${{ github.repository }}
+          gh release view recs4 -R $R >/dev/null 2>&1 || gh release create recs4 -R $R -t recs4 -n "감독 모드 4대4 자가대전 기보 묶음 (규칙 지문이 이름에 — 맥이 받아 가면 지운다)"
+          gh release upload recs4 recs4-${{ github.run_id }}-${{ env.RULES }}.bin.xz -R $R --clobber
