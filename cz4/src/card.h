@@ -35,7 +35,6 @@ enum Jokbo { JK_GEGEN = 0, JK_WALL, JK_TRIANGLE, JK_SUPPORT, JK_FORWARD, JK_BREA
 struct JkInfo { const char *name; int on; };   // on 0 = 꺼진 족보 (안 걸린다)
 extern JkInfo g_jk[N_JK];
 extern int g_zone4;   // 1 = 모든 선수 4방 존 (규칙) · 0 = 곁 한 칸 방향 존 (비교용)
-extern int g_atk_stance;   // 공격 태세 켬 (card.cpp — 규칙 1, 비교용 0)
 constexpr int JK_NEAR = 2;   // 지원·삼각 패스의 「2칸 안」(맨해튼)
 constexpr int JK_AHEAD = 3;  // 전진 패스·돌파의 「3칸 이상 앞」
 
@@ -50,7 +49,6 @@ struct Player {
 	int team = HOME;
 	int stance = 0;        // 수비 태세의 힘 — 0 = 태세 없음
 	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 · 월은 2 — 11-21 사용자 「월 2턴 4방 존」)
-	int charge = 0;        // 공격 태세 (11-21 사용자): 1 이면 이번 차례 다음 공 행동(슛·패스·드리블) 힘 +1 · 쓰거나 차례가 끝나면 0
 	int jk_up = 0;         // 족보 +1 토큰 (11-21 사용자): 1 이면 모든 판정 힘 +1 (겹치지 않음) · 우리 다음 차례 시작에 없어짐
 	int zdir = -1;         // 존 방향 (11-21 사용자): DIRS 번호 0~3 = 곁 한 칸 · ZD_ALL = 사방 4칸(월). stance 0 이면 뜻 없음
 	int bonus[4] = { 0, 0, 0, 0 };   // 스탯업 — 슛·패스(= 킥)·드리블(= 이동)·수비
@@ -79,8 +77,7 @@ struct State {
 	int goals[2] = { 0, 0 };
 	int save_team = -1;        // 키퍼 킥을 할 팀 (골 먹은 팀) — 이 팀 차례 첫 수는 A_SAVE 뿐
 	int role[2] = { R_DEF, R_ATK };
-	int hold = 0;                      // 공 임자가 태클을 버티는 힘 = 그 선수 이동 수치 (받은 순간) · 공 든 팀 차례마다 −1
-	int hold_skip = 0;
+	int hold = 0;                      // 공 임자가 태클을 버티는 힘 = 그 선수 드리블 능력치 (막 뺏은 공 = 뺏은 선수 태클 능력치) — 11-21 사용자, 차례마다 줄지 않음
 	int touch_team = -1, touch_mask = 0;   // 이번 공격에서 공을 만진 아군 (uid 비트) — 가담
 	// 족보 (11-21): jk_turn = 그 팀 지금 차례에 걸린 족보 비트 · jk_next = 남의 차례에 걸려 그 팀 다음 차례 몫(+1 은 그 차례 시작에 더함) · jk_count = 판 누적
 	int jk_turn[2] = { 0, 0 };

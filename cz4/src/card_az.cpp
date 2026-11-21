@@ -45,8 +45,6 @@ void net_input(const State &s, int team, NetInput &in) {
 			add(in, OFF_FWDMOVED + rel * NT + tile);   // 족보 +1 토큰 (11-21 — 옛 빈 칸 재사용)
 		if (q.stance > 0 && q.stance_left >= 2)
 			add(in, OFF_LASTPASS + rel * NT + tile);   // 태세가 한 차례 더 남음 (월 2차례 — 옛 빈 칸 재사용)
-		if (q.charge)
-			add(in, OFF_LASTPASS + (2 + rel) * NT + tile);   // 공격 태세 (11-21 — 옛 빈 칸 뒤 140칸)
 		if (s.ball_owner == q.uid)
 			add(in, OFF_BALL + rel * NT + tile);
 		if (marked(s, q))
@@ -129,7 +127,6 @@ void net_input(const State &s, int team, NetInput &in) {
 	}
 	d[50] = float(s.team_n) / float(PER_TEAM);
 	d[51] = float(s.sk_passive);
-	d[52] = float(s.hold_skip);
 }
 
 int action_index(const State &s, const Action &a) {
@@ -159,7 +156,7 @@ int action_index(const State &s, const Action &a) {
 			if (me < 0 || me >= PER_TEAM)
 				return -1;
 			i = (a.t == A_SHOT ? OFF_SHOT : OFF_STANCE_A) + me;
-			if (a.t == A_STANCE && a.uid != s.ball_owner) {   // 공 임자의 제자리 = 공격 태세 — 옛 태세 칸(월과 같은 칸, 공 임자는 수비 태세가 없어 겹치지 않음)   // 월(제자리 사방) = 옛 태세 칸 · 그 밖 = 방향 태세 칸 (11-21)
+			if (a.t == A_STANCE) {   // 제자리 = 4방 존 칸 (11-21) · 그 밖 = 방향 태세 칸 (비교용 CF_ZONE4=0)   // 월(제자리 사방) = 옛 태세 칸 · 그 밖 = 방향 태세 칸 (11-21)
 				int dir = stance_dir(s.players[a.uid], a.dest);
 				if (dir < 0)
 					return -1;
