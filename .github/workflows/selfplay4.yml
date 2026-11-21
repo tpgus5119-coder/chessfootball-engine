@@ -34,7 +34,7 @@ jobs:
       - name: champion
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download champion4 -p champion4.bin -D .
+        run: for i in $(seq 1 20); do gh release download champion4 -p champion4.bin -D . --clobber && break; sleep 20; done; test -s champion4.bin   # 맥이 망을 갈아 올리는 순간(자산이 잠깐 없음)엔 다시
       - name: selfplay
         env:
           CF_FLAT_REC: "1"
