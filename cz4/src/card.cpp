@@ -240,7 +240,7 @@ static void sync_roles(State &s) {
 		s.role[t] = t == bt ? R_ATK : R_DEF;
 }
 
-bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 모든 행동 힘 −1 · 범위 −1 (11-22 사용자, 겹치지 않음)
+bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 무브(이동·드리블) 힘 −1 · 범위 −1 (11-22 사용자, 겹치지 않음)
 	if (!p.placed())
 		return false;
 	for (const Player &m : s.players)
@@ -286,8 +286,8 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 		v += 2 - dd;
 	else if (use == U_DRIBBLE)
 		v += 1 - dd;
-	if (marked(s, p))
-		v -= 1;   // 마커 곁 = 모든 행동 힘 −1 (11-22 사용자 — 겹치지 않음)
+	if ((use == U_MOVE || use == U_DRIBBLE) && marked(s, p))
+		v -= 1;   // 마커 곁 = 무브(이동·드리블) 힘 −1 (11-22 사용자 — 겹치지 않음 · 버티는 힘도)
 	return std::max(1, v) + p.jk_up;   // 족보 +1 토큰은 거리로 깎인 뒤에 더한다 (먼 슛도 +1 그대로 — 최대 +1)
 }
 
@@ -302,8 +302,8 @@ int act_range(const State &s, const Player &p, int want, int skl) {
 	}
 	if (sr)
 		r += want == C_KICK ? 2 * g_range_bonus : g_range_bonus;   // 마에스트로 킥 범위 +2 (11-22 사용자) · 스프린터 이동 +1
-	if (marked(s, p))
-		r -= 1;   // 마커 곁 = 모든 범위 −1 (11-22)
+	if (want == C_MOVE && marked(s, p))
+		r -= 1;   // 마커 곁 = 무브 범위 −1 (11-22)
 	return std::max(1, r);
 }
 
@@ -1153,7 +1153,7 @@ static bool do_dribble(State &s, int uid, V2 dest) {
 	s.players[uid].pos = end;
 	vis_path(s, true, from, path, end);
 	if (s.ball_owner == uid) {
-		// 드리블로는 버티는 힘이 다시 차지 않는다 (11-22 HP — 패스를 받거나 새로 잡을 때만)
+		s.hold = pow;   // 드리블 뒤 버티는 힘 = 그 드리블의 판정 힘 (11-22 사용자 — 태클로 깎이고 다음 드리블·패스 받기 때 그 값으로)
 		if ((end.x - from.x) * forward_dir(team) > 0)
 			rep_add(s, uid, TRICKSTER);
 		if (end == path.back()) {   // 끝까지 간 드리블만 족보
@@ -1246,7 +1246,7 @@ static bool do_pass(State &s, int uid, V2 dest) {
 	vis_path(s, true, from, path, dest);
 	if (!cut) {
 		set_owner(s, ru);
-		// 받은 선수 버티는 힘 = 그 선수 드리블 능력치 (set_owner — 11-21 사용자)
+		s.hold = pow;   // 받은 선수 버티는 힘 = 그 패스의 판정 힘 (11-22 사용자 「패스 받은 상태는 그 패스 값」 — 멀리서 온 공은 약하게 받음)
 		pass_jokbo(s, uid, ru, from, dest);
 	}
 	if (s.ball_team() == team && (dest.x - from.x) * forward_dir(team) > 0)
@@ -1324,6 +1324,7 @@ static bool do_run(State &s, int uid, V2 dest, int mate) {
 	vis_path(s, true, from, path, dest);
 	if (!cut) {
 		set_owner(s, mate);
+		s.hold = pow;   // 뒷공간 패스를 받은 동료 = 그 패스 힘 (11-22)
 		pass_jokbo(s, uid, mate, from, dest);
 	}
 	if (s.ball_team() == team)
