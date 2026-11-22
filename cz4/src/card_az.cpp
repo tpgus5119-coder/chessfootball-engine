@@ -905,17 +905,21 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			used |= 1 << k;
 			pos[i] = POOL[k];
 		}
-		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(마에스트로 패스 범위 · 스프린터 무브 범위 · 월 지속)
-		if (pos[i] != PROSPECT && level > 0) {   // 성장은 전직한 선수만 — 커리어와 같은 길 (core/career.gd GROW_MAIN · 11-22)
-			const int n = std::min(GROW_N, int(next() % (2 * level + 1)));
-			for (int b = 0; b < n; b++) {
+		int st[GROW_K] = {}, half[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속)
+		if (pos[i] != PROSPECT && level > 0) {   // 성장은 전직한 선수만 — 커리어와 같은 카드 셈 (두 번째 +1 = 카드 2장, 11-22 밤)
+			const int n = int(next() % (2 * level + 2));   // 카드 0 ~ 7장
+			for (int c = 0; c < n; c++) {
 				int ok[GROW_K], m = 0;
 				for (int k = 0; k < GROW_K; k++)
 					if (grow_ok(pos[i], st, k))
 						ok[m++] = k;
 				if (!m)
 					break;
-				st[ok[next() % m]]++;
+				const int k = ok[next() % m];
+				if (st[k] == 1 && !half[k])
+					half[k] = 1;
+				else
+					half[k] = 0, st[k]++;
 			}
 		}
 		(pos[i] == MAESTRO || pos[i] == LONGSHOT ? krng_up : pos[i] == WALL ? hold_up : rng_up)[i] = st[4];

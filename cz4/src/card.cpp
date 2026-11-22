@@ -291,20 +291,12 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 }
 
 bool grow_ok(int pos, const int st[GROW_K], int k) {
-	int sum = 0;
-	for (int i = 0; i < GROW_K; i++)
-		sum += st[i];
-	if (sum >= GROW_N)
+	if (k < 0 || k >= GROW_K || pos == PROSPECT || st[k] >= GROW_MAX)
 		return false;
-	if (pos == TITAN || pos == MARKER || pos == ALLROUND)
-		return k < 4 && st[k] < 3;   // 자유 (슛·패스·무브·디펜스 — 스탯마다 +3)
-	const int main = pos == CANNON ? 0 : pos == PASSER ? 1 : pos == TRICKSTER ? 2 : pos == HUNTER ? 3 : pos == MAESTRO || pos == SPRINTER || pos == WALL || pos == LONGSHOT ? 4 : -1;   // 4 = 특수(마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속)
-	if (main < 0)
-		return false;
-	if (st[main] < 1)
-		return k == main;   // 주 능력 +1 먼저 (전직 + 1 = 주 능력 줄 2칸 — 11-22 넷째)
+	if (k == 4)   // 특수 = 마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속
+		return pos == MAESTRO || pos == LONGSHOT || pos == SPRINTER || pos == WALL;
 	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : pos == LONGSHOT ? 0 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘 · 중거리 슈터 슛 힘은 못 키움
-	return k != main && k != never && k < 4 && st[k] < 1;
+	return k != never;
 }
 
 int act_range(const State &s, const Player &p, int want, int skl) {
