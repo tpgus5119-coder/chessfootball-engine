@@ -22,13 +22,14 @@ namespace {
 // 공 없는 선수   5 받으러↔침투(0 받으러 옴 · 10 앞으로 침투)  6 움직이는 방향(0 가운데 · 10 측면)  7 받으러 갈 거리(1·2·3칸)  8 남는 수비(0·1·2명)
 // 달려드는 선수 9 인원(0·1·2명, 막 뺏기면 +1 — 역압박)  10 태클 세기(0 따라만 감 · 10 붙어서 태클·「강하게」 다가가기)
 // 자리 지키는 선수 11 수비 라인(0 우리 골대 앞 · 10 상대 진영)  12 마크(0 지역 · 10 사람)  13 존 세우기(0 공 쪽으로 끌려감 · 10 제자리에서 존 세워 인터셉트)
-//                      1  2  3  4  5  6  7  8  9 10 11 12 13
-float SL[TAC_N][SL_N] = { { 5, 9, 2, 5, 8, 2, 2, 0, 2, 9, 8, 5, 2 },    // 게겐프레싱 — 앞으로·침투·가운데로 · 남는 수비 0 · 둘이 달려들어 세게 · 높은 라인
-                          { 9, 3, 8, 2, 2, 8, 1, 1, 1, 5, 5, 2, 5 },    // 티키타카 — 늘 패스·옆뒤로·측면 벌림·짧게 · 1칸 곁으로 받으러 옴 · 지역
-                          { 2, 6, 5, 8, 5, 5, 3, 2, 0, 2, 1, 8, 8 } };  // 카테나치오 — 드리블 운반·길게 · 3칸 멀리서 받음 · 남는 수비 2 · 내려앉아 제자리 존 · 사람 마크
-constexpr float SL_LO[SL_N] = { 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0 };    // 막대마다 범위 (7 = 칸 · 8·9 = 명)
-constexpr float SL_HI[SL_N] = { 10, 10, 10, 10, 10, 10, 3, 2, 2, 10, 10, 10, 10 };
-enum { PASS, FWD, WIDE, LEN, RUN, RWIDE, RDIST, REST, PRESS, TACKLE, LINE, MARK, ZONE };
+// 모두          14 「강하게」(0 아낌 · 10 자주 — 포인트 2개를 한 선수에: 공 임자 = 패스·슛·드리블 +1 · 공 없는 선수 = 디펜스 +1, 11-22 밤)
+//                      1  2  3  4  5  6  7  8  9 10 11 12 13 14
+float SL[TAC_N][SL_N] = { { 5, 9, 2, 5, 8, 2, 2, 0, 2, 9, 8, 5, 2, 2 },    // 게겐프레싱 — 앞으로·침투·가운데로 · 남는 수비 0 · 둘이 달려들어 세게 · 높은 라인
+                          { 9, 3, 8, 2, 2, 8, 1, 1, 1, 5, 5, 2, 5, 5 },    // 티키타카 — 늘 패스·옆뒤로·측면 벌림·짧게 · 1칸 곁으로 받으러 옴 · 지역
+                          { 2, 6, 5, 8, 5, 5, 3, 2, 0, 2, 1, 8, 8, 8 } };  // 카테나치오 — 드리블 운반·길게 · 3칸 멀리서 받음 · 남는 수비 2 · 내려앉아 제자리 존 · 사람 마크
+constexpr float SL_LO[SL_N] = { 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0 };    // 막대마다 범위 (7 = 칸 · 8·9 = 명)
+constexpr float SL_HI[SL_N] = { 10, 10, 10, 10, 10, 10, 3, 2, 2, 10, 10, 10, 10, 10 };
+enum { PASS, FWD, WIDE, LEN, RUN, RWIDE, RDIST, REST, PRESS, TACKLE, LINE, MARK, ZONE, STRONG };
 constexpr float EPS = 0.06f;   // 허용 폭 (유저 막대 아님)
 
 // ---------- 직업 역할 (문서 5절 — 자리 깊이 · 임무) ----------
@@ -195,7 +196,9 @@ float holder(const State &s, const Sit &x, const float *S, int tac, const Player
 		if (me.f & R_CARRY)
 			b += 0.3f * std::max(0, gain);
 		return b;
-	default:   // 「강하게」(공 임자 제자리 디펜스)는 막대 없음 (11-22 공격 태세 항목 없앰) — 탐색 값이 정한다
+	case A_STANCE:   // 공 임자 제자리 디펜스 = 「강하게」 모으기 (14) — 슛 지대(깊이 6+)에서 더
+		return (S[STRONG] - 5) * (depth(x.team, p.pos) >= 6 ? 0.35f : 0.2f);
+	default:
 		return 0.0f;   // 슛은 보이면 쏜다 — 탐색 값이 정한다 (이기는 쪽 슛은 대본이 가로채지 않음)
 	}
 }
@@ -245,6 +248,8 @@ float defend(const State &s, const Sit &x, const float *S, int tac, const Player
 			return 0.25f * tk * std::max(-2, std::min(3, closer));
 		if (a.t == A_STANCE)
 			return adj ? 0.3f * S[TACKLE] + 0.5f : 0.0f;   // 붙어서 태클
+		if (a.t == A_SAVE)
+			return adj ? (S[STRONG] - 5) * 0.3f : 0.0f;   // 14 「강하게」 — 공 임자 곁이면 센 태클
 		return 0.0f;
 	}
 	// 자리 지키는 선수: 11 라인 + 역할 자리 · 12 마크(사람이면 위험한 상대 곁, 지역이면 자리)
@@ -261,6 +266,8 @@ float defend(const State &s, const Sit &x, const float *S, int tac, const Player
 			b -= (S[ZONE] - 5) * 0.1f;   // 13 존 세우기 상 = 공으로 끌려가지 않음 (내려앉아 기다리면 상대가 들어온다)
 		return b;
 	}
+	if (a.t == A_SAVE)   // 14 「강하게」 모으기 (이어서 센 존)
+		return (S[STRONG] - 5) * 0.2f;
 	if (a.t == A_STANCE)   // 13 존 세우기 — 높을수록 제자리에서 존을 세워 인터셉트
 		return zone_gap(depth(x.team, p.pos), lo, hi) == 0 ? 0.08f * S[ZONE] : 0.0f;
 	return 0.0f;
