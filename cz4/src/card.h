@@ -27,7 +27,6 @@ constexpr int TEAM_N = 4;   // 4대4 (11-19) — 팀마다 uid 0~3 · 5~8 만 �
 // 선수 기준 수치 (11-19 사용자 · 11-21 이동 3): 킥 3 · 수비 3 · 이동 3 — 여기에 스탯업(bonus)·직업·족보 보정을 더한다
 constexpr int BASE_KICK = 3, BASE_DEF = 3, BASE_MOVE = 3;   // 이동 3 (11-21 사용자 — 옛 2)
 constexpr int KICK_RANGE = 4;     // 킥 범위 상한 (범위 보너스만큼 늘어남)
-constexpr int KEEPER_RANGE = 8;   // 키퍼 킥 — 우리 골대에서 이 걸음 안 (선수 모드와 같은 값)
 
 // 축구 족보 6개 (11-21 사용자 — 두 팀 모두, 옛 9개 없앰). 모두 그 한 수에서 바로 판정 · 혜택 = 걸린 순간 행동 포인트 +1 · 같은 족보는 한 차례에 한 번.
 // 표 g_jk 한 곳(이름·켬) — 화면 이름도 이 표 (CardNative.jk_table)
@@ -38,7 +37,7 @@ extern int g_zone4;   // 1 = 모든 선수 4방 존 (규칙) · 0 = 곁 한 칸 
 constexpr int JK_NEAR = 2;   // 지원·삼각 패스의 「2칸 안」(맨해튼)
 constexpr int JK_AHEAD = 3;  // 전진 패스·돌파의 「3칸 이상 앞」
 
-// A_SAVE = 키퍼 킥 (골·막힘 뒤 첫 수) · A_RUN = 뒷공간 패스(빈 칸 + 받을 동료 mate 가 같이 뛰어감, 11-21) · 6·7 = 빈 번호(옛 차례 끝·전술)
+// A_SAVE = 옛 키퍼 킥 (11-22 없앰 — 골 뒤 = 킥오프, 번호 자리만) · A_RUN = 뒷공간 패스(빈 칸 + 받을 동료 mate 가 같이 뛰어감, 11-21) · 6·7 = 빈 번호(옛 차례 끝·전술)
 enum Act { A_MOVE = 0, A_DRIBBLE, A_PASS, A_SHOT, A_STANCE, A_PLACE, A_FREE6, A_FREE7, A_SAVE, A_RUN };
 
 struct Player {
@@ -76,7 +75,6 @@ struct State {
 	int half_order[PLAYERS] = {};
 	int opener = HOME;
 	int goals[2] = { 0, 0 };
-	int save_team = -1;        // 키퍼 킥을 할 팀 (골 먹은 팀) — 이 팀 차례 첫 수는 A_SAVE 뿐
 	int role[2] = { R_DEF, R_ATK };
 	int hold = 0;                      // 공 임자가 태클을 버티는 힘 = 그 선수 드리블 능력치 (막 뺏은 공 = 뺏은 선수 태클 능력치) — 11-21 사용자, 차례마다 줄지 않음
 	int touch_team = -1, touch_mask = 0;   // 이번 공격에서 공을 만진 아군 (uid 비트) — 가담
@@ -114,7 +112,7 @@ struct Action {
 	V2 dest{ 0, 0 };
 	int card = -1;     // 쓰지 않음 (옛 카드 번호 자리 — 늘 −1)
 	int sk = 0;        // 늘 0 (11-19 직업 능력 상시 — 옛 「스킬을 켠 수」 자리)
-	int mate = -1;     // 뒷공간 패스(A_RUN)·빈 칸 키퍼 킥(A_SAVE)의 받을 동료 uid (11-21) — 그 밖 −1
+	int mate = -1;     // 뒷공간 패스(A_RUN)의 받을 동료 uid (11-21) — 그 밖 −1
 };
 
 // 수비 태세 존 (11-21 사용자 「곁 한 칸을 골라 존 1칸 · 방향 공개 · 월 = 사방 4칸 1차례」)

@@ -35,7 +35,6 @@ static void emit(const Event &e) {
 // 측정용 스위치 (환경 변수 — knobs_from_env). 규칙이 아니다: 사용자 11-21 비교 실험용
 int g_zone4 = 1;         // 수비 존 = 모든 선수 제자리 사방 4칸 (11-21 사용자 「수비존 4로해」 — 규칙. 비교용 CF_ZONE4=0 = 곁 한 칸 방향 존)
 int g_drib_short = 1;    // 드리블 범위 = 이동 범위 − 1 (11-21 사용자 「드리블 −1」 — 규칙. 공 없이 뛰는 범위는 그대로 · 비교용 CF_DRIB_SHORT=0)
-int g_keeper = 0;        // CF_KEEPER=K: 골대 칸 키퍼 수치 K (슛 힘이 K 보다 커야 골) — 0 = 키퍼 없음
 int g_keep_pts = 0;      // CF_KEEP_PTS=1: 자기 차례에 공을 뺏겨도 남은 포인트로 차례를 이어 간다
 int g_kick_flat = 0;     // CF_KICK_FLAT=1: 킥 힘이 거리로 안 줄어듦
 int g_stance_lock = 0;   // CF_STANCE_LOCK=1: 태세 중인 선수는 이동 못 함
@@ -91,8 +90,6 @@ int State::ball_team() const {
 		return players[ball_owner].team;
 	if (loose_ball())
 		return loose_team;
-	if (save_team >= 0)
-		return save_team;
 	return opponent(first_team);   // 킥오프 전 = 후공 팀이 공격 측
 }
 
@@ -235,7 +232,7 @@ static void mark_steal(State &s) {
 }
 
 bool kickoff_turn(const State &s) {
-	return s.phase == PLAY && s.save_team < 0 && s.ball_owner == -1 && !s.loose_ball() && s.turn_team == opponent(s.first_team);
+	return s.phase == PLAY && s.ball_owner == -1 && !s.loose_ball() && s.turn_team == opponent(s.first_team);
 }
 
 // 공 가진 팀 = 공격
@@ -488,7 +485,6 @@ static void reset_shape(State &s, int stay = -1) {
 		p.stance_left = 0;
 		p.charge = 0;
 	}
-	s.save_team = -1;
 	s.ball_owner = -1;
 	s.ball_pos = UNPLACED;
 	s.loose_team = -1;
@@ -499,7 +495,7 @@ static void reset_shape(State &s, int stay = -1) {
 }
 
 
-// 반 시작 (후반): 킥오프 대형 · scorer 가 공 없이 먼저, 상대가 킥오프
+// 반 시작(후반)·골 뒤 (11-22 사용자 「골 먹히면 킥오프」): 두 팀 모두 킥오프 대형 · scorer 가 공 없이 먼저, 상대(실점 팀)가 킥오프
 static void restart_half(State &s, int scorer) {
 	reset_shape(s);
 	s.first_team = scorer;
@@ -508,18 +504,6 @@ static void restart_half(State &s, int scorer) {
 	s.turn_team = scorer;
 	turn_start(s, scorer);
 	refresh_if_stuck(s);
-}
-
-// 골 뒤: 실점 팀이 키퍼 킥으로 다시 시작. 득점 팀은 제자리, 실점 팀만 대형으로 (v15c · 11-21 막힘 없음 — 키퍼 킥은 골 뒤에만)
-static void keeper_restart(State &s, int scorer) {
-	const int opp = opponent(scorer);
-	reset_shape(s, scorer);
-	s.first_team = scorer;
-	s.save_team = opp;
-	s.role[opp] = R_ATK;
-	s.role[scorer] = R_DEF;
-	s.turn_team = opp;
-	turn_start(s, opp);
 }
 
 void new_match(State &s, int first) {
@@ -572,7 +556,6 @@ void knobs_from_env() {
 	num("CF_HALF_TURNS", g_half_turns);
 	num("CF_ZONE4", g_zone4);
 	num("CF_KEEP_PTS", g_keep_pts);
-	num("CF_KEEPER", g_keeper);
 	num("CF_DRIB_SHORT", g_drib_short);
 	num("CF_KICK_FLAT", g_kick_flat);
 	num("CF_STANCE_LOCK", g_stance_lock);
@@ -641,8 +624,6 @@ void end_turn(State &s) {
 
 // 둘 수가 하나라도 있나 — 거의 늘 있다(빈 곁 칸으로 한 걸음). 빠른 길 먼저 보고, 애매하면 수 목록을 다 만든다
 static bool any_action(const State &s) {
-	if (s.save_team >= 0)
-		return true;
 	const bool ko = kickoff_turn(s);
 	for (const Player &p : s.players) {
 		if (p.team != s.turn_team || !p.placed() || ko)
@@ -1366,49 +1347,12 @@ static bool do_shot(State &s, int uid) {
 		after_action(s, team);
 		return true;
 	}
-	if (g_keeper > 0 && pow <= g_keeper) {   // 측정용 키퍼 (CF_KEEPER=K): 골대 칸에서 키퍼 K 와 한 번 더 — 동점은 도전한 슛이 진다 → 막힘 = 그 팀 키퍼 킥 (대형은 그대로)
-		const int opp = opponent(team);
-		s.ball_owner = -1;
-		s.ball_pos = goal;
-		s.turn_count += 1;
-		if (!clock(s)) {
-			s.save_team = opp;
-			s.role[opp] = R_ATK;
-			s.role[team] = R_DEF;
-			s.turn_team = opp;
-			turn_start(s, opp);
-		}
-		return true;
-	}
 	// 슛 길의 경합을 다 뚫고 골대 칸에 닿았다 = 골 (11-21 사용자 「없애 ㄱ」 — 골문 체력·막힘·슛 데미지 없음)
 	s.goals[team] += 1;
 	emit({ 2, team, pow, goal, pow, 0, 1, {}, pow });
 	s.turn_count += 1;   // 넣은 팀의 차례는 여기서 끝 — 반은 턴 시계로만 끝난다 (v15b)
 	if (!clock(s))
-		keeper_restart(s, team);
-	return true;
-}
-
-// 키퍼 킥 (11-19 — 카드 없음): 우리 골대에서 KEEPER_RANGE 걸음 안의 우리 선수 칸만 (11-21 빈 칸 키퍼 킥 없앰).
-// 포인트 1 · 인터셉트·경합 없음 · 박스 ×
-static bool save_ok(const State &s, int team, V2 t, int mate) {
-	if (!in_bounds(t) || manhattan(goal_of(team), t) > KEEPER_RANGE || is_any_box(t) || is_goal(t))
-		return false;
-	(void)mate;
-	const Player *q = player_at(s, t);
-	return q && q->team == team;   // 우리 선수 칸만 — 빈 칸 키퍼 킥 없음 (11-21 사용자 「키퍼 빈칸 롱킥도 없음」)
-}
-static bool do_save(State &s, V2 dest, int mate) {
-	const int team = s.save_team;
-	if (team < 0 || s.turn_team != team || s.pts < 1 || !save_ok(s, team, dest, mate))
-		return false;
-	pay_point(s);
-	s.save_team = -1;
-	const Player *rq = player_at(s, dest);
-	emit({ 4, -1, -1, dest, manhattan(goal_of(team), dest), 1, 0, { dest } });
-	set_owner(s, rq->uid);
-	vis_add(s.vis_b, dest);
-	after_action(s, team);
+		restart_half(s, team);   // 골 뒤 = 킥오프 (11-22 — 옛 키퍼 킥 없앰)
 	return true;
 }
 
@@ -1587,7 +1531,6 @@ static bool apply_inner(State &s, const Action &a) {
 		case A_PASS: return u && spend_charge(s, a.uid, do_pass(s, a.uid, a.dest));
 		case A_RUN: return u && spend_charge(s, a.uid, do_run(s, a.uid, a.dest, a.mate));
 		case A_SHOT: return u && spend_charge(s, a.uid, do_shot(s, a.uid));
-		case A_SAVE: return do_save(s, a.dest, a.mate);
 		case A_STANCE: return u && do_stance(s, a.uid, a.dest);
 	}
 	return false;   // 차례 끝 수는 없다 (11-21 사용자 — 포인트를 다 쓴다, 둘 수가 없을 때만 저절로 끝)
@@ -1616,18 +1559,6 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 	}
 	if (s.phase != PLAY || s.pts < 1)
 		return;
-	if (s.save_team >= 0) {   // 키퍼 킥만 — 우리 선수 칸 · 빈 칸이면 받을 동료마다 한 수
-		const int team = s.save_team;
-		if (s.turn_team != team)
-			return;
-		for (int x = 0; x < W; x++)
-			for (int z = 0; z < H; z++) {
-				const V2 t{ x, z };
-				if (save_ok(s, team, t, -1))
-					out.push_back({ A_SAVE, -1, t, -1 });
-			}
-		return;
-	}
 	const int team = s.turn_team;
 	const bool ko = kickoff_turn(s);
 	auto gen = [&](const Player &q, int sk) {   // sk = Action.sk (0 = 스킬 없음 · 만능은 1·2 둘 다)

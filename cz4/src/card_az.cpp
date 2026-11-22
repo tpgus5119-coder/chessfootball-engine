@@ -121,8 +121,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[16] = float(std::max(-3.0, std::min(3.0, heuristic(s, team))) / 3.0);
 	// d[19]·d[20] = 옛 역습 보너스 (11-20 없앰 — 칸 자리만 남김, 늘 0)
 	// d[21]·d[22] = 옛 괄호 합 · d[25]·d[53] = 옛 역습 행동 수 · d[44]~d[49]·d[54]·d[55] = 옛 족보 진행·혜택 (11-21 없앰 — 늘 0, 이식 때 치우침으로 접음)
-	d[23] = s.save_team == team;
-	d[24] = s.save_team == opp;
+	// d[23]·d[24] = 옛 키퍼 킥 팀 (11-22 없앰 — 늘 0)
 	for (int k = 0; k < N_JK; k++) {   // 이번 차례(남의 차례면 다음 차례 몫)에 이미 걸린 족보 — 같은 족보는 한 차례 한 번 (11-21)
 		d[26 + k] = float((jokbo_mask(s, team) >> k) & 1);
 		d[35 + k] = float((jokbo_mask(s, opp) >> k) & 1);
@@ -174,14 +173,6 @@ int action_index(const State &s, const Action &a) {
 			if (a.uid < 0 || a.uid > POOL_N || !in_bounds(a.dest))
 				return -1;
 			return OFF_PLACE + a.uid * NT + flip_tile(a.dest, team);
-		case A_SAVE: {
-			if (!in_bounds(a.dest))
-				return -1;
-			if (a.mate < 0)
-				return OFF_SAVE + flip_tile(a.dest, team);
-			const int mm = a.mate - PER_TEAM * team;
-			return mm >= 0 && mm < PER_TEAM ? OFF_SAVE_RUN + mm * NT + flip_tile(a.dest, team) : -1;
-		}
 		default:
 			return -1;
 	}
