@@ -242,7 +242,7 @@ static void sync_roles(State &s) {
 		s.role[t] = t == bt ? R_ATK : R_DEF;
 }
 
-bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 이동·드리블 × (킥·태세는 됨, 11-22 사용자 「잡히면 못 움직여야」)
+bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 모든 행동 힘 −1 · 범위 −1 (11-22 사용자, 겹치지 않음)
 	if (!p.placed())
 		return false;
 	for (const Player &m : s.players)
@@ -283,11 +283,13 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 	// 거리 반비례 (11-21 사용자): 킥(패스·슛) = 수치 + 2 − 거리 → 기본 1칸 4 · 2칸 3 · 3칸 2 · 4칸 1
 	//                             드리블 = 수치 + 1 − 거리 → 기본 1칸 3 · 2칸 2 · 3칸 1 (거리 0 = 공을 잡고 선 힘 = 수치)
 	// 측정용 CF_KICK_FLAT=1 이면 킥은 거리와 상관없이 수치 그대로
-	const int dd = p.charge == 2 ? 1 : d;   // 공격 태세 발동 = 거리로 안 약해짐 (늘 1칸 힘 — 11-22 사용자 C안)
+	const int dd = p.charge == 2 ? 1 : d;   // 「강하게」 = 거리로 안 약해짐 (늘 1칸 힘 — 11-22 사용자)
 	if (kick && !g_kick_flat)
 		v += 2 - dd;
 	else if (use == U_DRIBBLE)
 		v += 1 - dd;
+	if (marked(s, p))
+		v -= 1;   // 마커 곁 = 모든 행동 힘 −1 (11-22 사용자 — 겹치지 않음)
 	return std::max(1, v) + p.jk_up;   // 족보 +1 토큰은 거리로 깎인 뒤에 더한다 (먼 슛도 +1 그대로 — 최대 +1)
 }
 
@@ -300,8 +302,11 @@ int act_range(const State &s, const Player &p, int want, int skl) {
 	} else {
 		r = move_stat(p) + p.range_up;
 	}
-	r += p.charge == 2;   // 공격 태세 발동 = 범위 +1 (킥·무브)
-	return std::max(1, r + (sr ? g_range_bonus : 0));
+	if (sr)
+		r += want == C_KICK ? 2 * g_range_bonus : g_range_bonus;   // 마에스트로 킥 범위 +2 (11-22 사용자) · 스프린터 이동 +1
+	if (marked(s, p))
+		r -= 1;   // 마커 곁 = 모든 범위 −1 (11-22)
+	return std::max(1, r);
 }
 
 int assist_value(const State &s, int team) {
@@ -378,8 +383,7 @@ static void turn_start(State &s, int team) {   // 우리 차례 시작: 태세 �
 	else if (s.loose_ball())
 		vis_add(s.vis_b, s.ball_pos);
 	for (Player &p : s.players)
-		if (p.team == team)
-			p.charge = p.charge == 1 && s.ball_owner == p.uid ? 2 : 0;   // 모은 태세는 다음 우리 차례에 발동 · 발동한 차례에 안 쓰면 사라짐
+		p.charge = 0;   // 「강하게」는 그 차례 안에서만 (11-22)
 	for (Player &p : s.players)
 		if (p.team == team) {
 			if (p.jk_up) {   // 족보 +1 토큰은 「다음 상대 차례까지」 — 붙인 만큼 되돌린다
@@ -1070,7 +1074,7 @@ static void move_blocked(const State &s, const Player &p, bool blocked[NT]) {
 
 static bool do_move(State &s, int uid, V2 dest) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || kickoff_turn(s) || s.ball_owner == uid || !move_dest_ok(s, p, dest) || (g_stance_lock && p.stance > 0) || marked(s, p))
+	if (!can_act(s, p) || kickoff_turn(s) || s.ball_owner == uid || !move_dest_ok(s, p, dest) || (g_stance_lock && p.stance > 0))
 		return false;
 	bool blocked[NT];
 	move_blocked(s, p, blocked);
@@ -1123,7 +1127,7 @@ static bool do_move(State &s, int uid, V2 dest) {
 
 static bool do_dribble(State &s, int uid, V2 dest) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || !may_carry(s, p) || player_at(s, dest) || is_any_box(dest) || is_goal(dest) || marked(s, p))
+	if (!can_act(s, p) || !may_carry(s, p) || player_at(s, dest) || is_any_box(dest) || is_goal(dest))
 		return false;
 	int zone[NT];
 	build_zone(s, opponent(p.team), zone);
@@ -1360,9 +1364,10 @@ static bool can_stance(const State &s, const Player &p) {
 	return can_act(s, p) && s.ball_owner != p.uid && !kickoff_turn(s) && p.stance == 0 && !is_any_box(p.pos);
 }
 
-// 공격 태세 (11-22 사용자 C안): 공 임자가 제자리 「디펜스」를 누름 — 1포인트, 다음 우리 차례에 발동 (상대가 그 사이 대처할 기회)
+// 「강하게」 (11-22 사용자 — 옛 공격 태세 C안 대신): 킥·무브를 포인트 2개로 하면 거리로 안 약해짐(1칸 힘).
+// 엔진에서는 「힘 모으기(공 임자 제자리 A_STANCE, 1포인트) → 바로 다음 킥·무브(1포인트)」 두 수 — 망 행동 칸 그대로. 화면은 「강하게」 단추 하나
 static bool atk_stance_ok(const State &s, const Player &p) {
-	return s.ball_owner == p.uid && p.charge == 0 && can_act(s, p) && !kickoff_turn(s);
+	return s.ball_owner == p.uid && p.charge == 0 && s.pts >= 2 && can_act(s, p) && !kickoff_turn(s);
 }
 
 static bool do_stance(State &s, int uid, V2 dest) {
@@ -1371,7 +1376,7 @@ static bool do_stance(State &s, int uid, V2 dest) {
 		if (dest != q.pos || !atk_stance_ok(s, q))
 			return false;
 		pay_point(s);
-		q.charge = 1;
+		q.charge = 2;   // 이번 차례 다음 킥·무브에 바로
 		after_action(s, q.team);
 		return true;
 	}
@@ -1566,8 +1571,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 		const bool do_mv = !skl || skill_act(q.position, A_MOVE, sk), do_kk = !skl || skill_act(q.position, A_PASS, sk), do_df = !skl || skill_act(q.position, A_STANCE, sk);
 		const int u = q.uid;
 		const bool carry = may_carry(s, q);
-		const bool mk = marked(s, q);   // 마커 곁 = 이동·드리블 × (11-22)
-		if (do_mv && !mk) {
+		if (do_mv) {
 			const int mr = std::max(1, act_range(s, q, C_MOVE, sk) - (carry ? g_drib_short : 0));   // 드리블 범위 = 이동 범위 − 1 (11-21 규칙)
 			bool blocked[NT];   // 그 선수의 벽 — 적의 몸 · 이번 차례 그 선수(드리블이면 공도)가 있었던 칸
 			if (carry)
