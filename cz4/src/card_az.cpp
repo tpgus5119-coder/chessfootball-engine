@@ -883,8 +883,8 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	};
 	// 11-20 사용자 「구성 넓혀라」 — 커리어와 같은 꼴: 8직업 · 스탯은 킥(슛·패스 같이)·무브·디펜스 각 0~3
 	// 만능은 뺌 (11-20 사용자 「만능은 없고, 각 직업 4명씩」 — 옛 만능 에이스는 직업을 받음)
-	constexpr int JOBS_N = 8;
-	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL };
+	constexpr int JOBS_N = 10;   // 11-22 직업 10개 (중거리 슈터·패서 = 옛 부스터·노마드 자리)
+	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, LONGSHOT, PASSER };
 	int pos[PER_TEAM], bonus[PER_TEAM][4] = {};
 	int used = 0;
 	const int prospects = int(next() % (PER_TEAM + 1));   // 유망주 0~5명

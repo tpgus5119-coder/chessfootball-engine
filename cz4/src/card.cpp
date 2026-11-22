@@ -45,13 +45,15 @@ static bool sk_power(int pos, int sk, int use) {   // 이 수가 힘 +1 스킬�
 		return false;
 	const bool all = pos == ALLROUND && sk == 1;
 	const bool kick = use == U_PASS || use == U_SHOT, mv = use == U_MOVE || use == U_DRIBBLE;
-	return (kick && (pos == CANNON || all)) || (mv && (pos == TRICKSTER || all)) || (use == U_STANCE && (pos == HUNTER || all));
+	// 11-22 직업 10개: 캐논 = 슛 힘 · 패서 = 패스 힘 · 트릭스터 = 무브 힘 · 헌터 = 수비 힘 (만능은 다)
+	return (use == U_SHOT && pos == CANNON) || (use == U_PASS && pos == PASSER) || (kick && all) || (mv && (pos == TRICKSTER || all)) || (use == U_STANCE && (pos == HUNTER || all));
 }
 static bool sk_range(int pos, int sk, int want) {   // 이 수가 범위 +1 스킬인가
 	if (!sk)
 		return false;
 	const bool all = pos == ALLROUND && sk == 2;
-	return (want == C_KICK && (pos == MAESTRO || all)) || (want == C_MOVE && (pos == SPRINTER || all));
+	// 11-22: 마에스트로 = 패스 범위 · 중거리 슈터 = 슛 범위 · 스프린터 = 무브 범위
+	return (want == C_KICK && (pos == MAESTRO || all)) || (want == C_SHOT && (pos == LONGSHOT || all)) || (want == C_MOVE && (pos == SPRINTER || all));
 }
 
 int g_skill_pow = 1;
@@ -290,13 +292,13 @@ int act_range(const State &s, const Player &p, int want, int skl) {
 	skl = skl_now(s, p, skl);
 	const bool sr = s.sk_passive ? sk_range(p.position, 1, want) || sk_range(p.position, 2, want) : sk_range(p.position, skl, want);
 	int r;
-	if (want == C_KICK) {
+	if (want == C_KICK || want == C_SHOT) {
 		r = KICK_RANGE + p.kick_range_up;
 	} else {
 		r = move_stat(p) + p.range_up;
 	}
 	if (sr)
-		r += want == C_KICK ? 2 * g_range_bonus : g_range_bonus;   // 마에스트로 킥 범위 +2 (11-22 사용자) · 스프린터 이동 +1
+		r += want == C_MOVE ? g_range_bonus : 2 * g_range_bonus;   // 마에스트로 패스 · 중거리 슈터 슛 범위 +2 · 스프린터 무브 +1 (11-22)
 	if (want == C_MOVE && marked(s, p))
 		r -= 1;   // 마커 곁 = 무브 범위 −1 (11-22)
 	return std::max(1, r);
@@ -1285,7 +1287,7 @@ static bool do_shot(State &s, int uid) {
 	if (!can_act(s, p) || s.ball_owner != uid)
 		return false;
 	const V2 goal = opponent_goal(p.team);
-	const int rng = act_range(s, p, C_KICK);
+	const int rng = act_range(s, p, C_SHOT);
 	const int dist = manhattan(p.pos, goal);
 	const int pow = act_power(s, p, U_SHOT, dist);
 	int zone[NT];
@@ -1602,8 +1604,9 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 				bool blocked[NT];
 				path_blocked(s, team, -1, true, blocked);
 				Reach sr;
-				reach(q.pos, kr, blocked, goal, sr);
-				if (sr.has(goal) && manhattan(q.pos, goal) <= kr)
+				const int sr_n = act_range(s, q, C_SHOT, sk);   // 슛 범위 (11-22 — 중거리 슈터 +2)
+				reach(q.pos, sr_n, blocked, goal, sr);
+				if (sr.has(goal) && manhattan(q.pos, goal) <= sr_n)
 					out.push_back({ A_SHOT, u, goal, -1, sk });
 			}
 		}

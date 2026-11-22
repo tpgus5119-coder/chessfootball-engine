@@ -19,7 +19,7 @@ namespace card {
 constexpr int CARD_HALF_TURNS = 50;   // 반 = 팀당 25차례 (사용자 2026-11-06)
 extern int g_time_input;   // 0 = 망 입력에서 시간(반 진행·후반)을 0 으로 (자가학습 CF_NO_TIME)
 extern int g_half_turns;   // 반 길이(두 팀 합 차례) — 자가학습만 CF_HALF_TURNS 로 바꾼다
-enum CardType { C_KICK = 0, C_MOVE = 1, C_DEF = 2 };   // 행동 셋 (옛 이름 그대로 — 킥·이동·수비)
+enum CardType { C_KICK = 0, C_MOVE = 1, C_DEF = 2, C_SHOT = 3 };   // 행동 셋 (킥·이동·수비) · C_SHOT = 슛 범위 묻기 전용 (11-22 — 킥 범위 C_KICK 은 패스)
 enum Role { R_ATK = 0, R_DEF = 1 };   // 공 가진 팀 = 공격
 constexpr int CARD_POOL_N = 10;
 constexpr int TEAM_N = 4;   // 4대4 (11-19) — 팀마다 uid 0~3 · 5~8 만 판에 선다 (PER_TEAM 5 는 배열 자리)
