@@ -167,7 +167,6 @@ Dictionary CardNative::get_state() const {
 		q["stance"] = p.stance;
 		q["stance_left"] = p.stance_left;
 		q["jk_up"] = p.jk_up;   // 족보 +1 토큰 (11-21)
-		q["charge"] = p.charge;   // 공격 태세 1 모음 · 2 발동 (11-22)
 		{   // 존 칸 (11-21 방향 존 — 공개): 곁 한 칸 · 월은 사방
 			cf::V2 z[4];
 			const int nz = ck::zone_tiles(p, z);
@@ -269,7 +268,7 @@ void CardNative::force_end_turn() {
 int CardNative::act_range(int uid, int want, int sk) const {
 	if (uid < 0 || uid >= cf::PLAYERS)
 		return 0;
-	return ck::act_range(cur(), cur().players[uid], want == 0 ? ck::C_KICK : ck::C_MOVE, sk);
+	return ck::act_range(cur(), cur().players[uid], want == 0 ? ck::C_KICK : want == 3 ? ck::C_SHOT : ck::C_MOVE, sk);   // 3 = 슛 범위 (11-22 중거리 슈터)
 }
 
 // 그 선수의 판정 힘 (use = card.h Use: 0 패스 · 1 슛 · 2 이동 · 3 드리블 · 4 태세 · dist = 킥 거리)
@@ -434,7 +433,6 @@ void CardNative::dev_set(int uid, int x, int y, int stance) {
 	s.players[uid].stance_left = stance > 0 ? 1 : 0;
 	s.players[uid].jk_up = 0;   // 개발용 놓기 — 앞 국면의 족보 토큰은 지운다
 	s.players[uid].acted = 0;   // 앞 국면의 「행동함」(11-22 한 선수 행동 하나)·「강하게」도
-	s.players[uid].charge = 0;
 	s.players[uid].zdir = ck::ZD_ALL;   // 개발용 — 사방 존
 }
 

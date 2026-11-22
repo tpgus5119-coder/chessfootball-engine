@@ -36,7 +36,7 @@ enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2, SUB = 3 }; // SUB = 옛 하
 enum Pos { PROSPECT = 0, CANNON = 1, TRICKSTER = 3, TITAN = 4, MARKER = 5,
 	HUNTER = 6, BOOSTER = 7, WALL = 8, SPRINTER = 10, MAESTRO = 12, NOMAD = 13,
 	ALLROUND = 14 };
-constexpr int LONGSHOT = BOOSTER;   // 중거리 슈터 (11-22 사용자 직업 10개 — 감독 모드는 옛 부스터 자리·번호를 씀)
+constexpr int LONGSHOT = BOOSTER;   // 중거리 슈터 (11-22 — 옛 부스터 자리·번호)
 constexpr int PASSER = NOMAD;       // 패서 (11-22 — 옛 노마드 자리·번호)   // v7.0 — 번호는 player_state.gd Pos와 같다 (2·9·11 빈 자리) · 14 만능 = 카드 모드 전용(11-17, 드래프트 풀 밖 — 상대 13팀 만능 셋)
 enum Stat { SHT = 0, PAS, DRB, INT_, TKL, PHY };
 // 액션 종류 (GDScript 문자열과 1:1 — minimax_bot.gd ACT_NAME과 같은 순서가 인코딩 계약이다).

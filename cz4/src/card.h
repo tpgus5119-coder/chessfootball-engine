@@ -25,7 +25,8 @@ constexpr int CARD_POOL_N = 10;
 constexpr int TEAM_N = 4;   // 4대4 (11-19) — 팀마다 uid 0~3 · 5~8 만 판에 선다 (PER_TEAM 5 는 배열 자리)
 
 // 선수 기준 수치 (11-19 사용자 · 11-21 이동 3): 킥 3 · 수비 3 · 이동 3 — 여기에 스탯업(bonus)·직업·족보 보정을 더한다
-constexpr int BASE_KICK = 4, BASE_DEF = 3, BASE_MOVE = 3;   // 11-22 사용자 「계산식 하나 · 범위 = 능력치」: 힘 = 능력치 + 1 − 거리 · 킥 4 (옛 「3 + 2 − 거리」와 같은 값)
+constexpr int BASE_KICK = 4, BASE_DEF = 3, BASE_MOVE = 3;
+constexpr int MOVE_RANGE = 3;      // 무브 범위 3 고정 — 무브 수치(힘)와 따로 (11-22 사용자 「무브 범위 = 힘 아님」) · 스프린터만 늘어남   // 11-22 사용자 「계산식 하나 · 범위 = 능력치」: 힘 = 능력치 + 1 − 거리 · 킥 4 (옛 「3 + 2 − 거리」와 같은 값)
 constexpr int KICK_RANGE = 4;     // 킥 범위 상한 (범위 보너스만큼 늘어남)
 
 // 축구 족보 6개 (11-21 사용자 — 두 팀 모두, 옛 9개 없앰). 모두 그 한 수에서 바로 판정 · 혜택 = 걸린 순간 행동 포인트 +1 · 같은 족보는 한 차례에 한 번.
@@ -48,7 +49,6 @@ struct Player {
 	int team = HOME;
 	int stance = 0;        // 수비 태세의 힘 — 0 = 태세 없음
 	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 · 월은 2 — 11-21 사용자 「월 2턴 4방 존」)
-	int charge = 0;        // 「강하게」 (11-22 사용자): 2 = 이번 차례 다음 킥·무브 1번이 거리로 안 약해짐(1칸 힘) — 포인트 2개짜리 행동의 앞 반 · 쓰거나 공을 잃거나 차례가 끝나면 0 (1 은 안 씀)
 	int acted = 0;         // 이번 차례에 행동함 (11-22 사용자 「한 선수는 한 차례에 행동 하나」) — 우리 차례 시작에 0 · 「강하게」 모으기는 안 셈
 	int jk_up = 0;         // 족보 +1 토큰 (11-21 사용자): 1 이면 모든 판정 힘 +1 (겹치지 않음) · 우리 다음 차례 시작에 없어짐
 	int zdir = -1;         // 존 방향 (11-21 사용자): DIRS 번호 0~3 = 곁 한 칸 · ZD_ALL = 사방 4칸(월). stance 0 이면 뜻 없음
@@ -156,6 +156,10 @@ constexpr int SLOT_PROSPECT = CARD_POOL_N;
 void set_lineup(State &s, int team, const int position[PER_TEAM], const int bonus[PER_TEAM][4]);
 int eff_hold(const State &s);
 void set_perks(State &s, int team, const int range_up[PER_TEAM], const int hold_up[PER_TEAM], const int kick_range_up[PER_TEAM] = nullptr);
+// 성장 길 (11-22 사용자): 전직이 주 능력 줄의 첫 칸 → 주 능력 +2 를 먼저 채운 뒤 나머지 스탯 +1씩 (모두 GROW_N 번). 타이탄·마커 = 아무 스탯 (스탯마다 +3).
+// 마에스트로 주 능력 = 패스 범위(킥 못 키움) · 스프린터 = 무브 범위(무브 못 키움). st[4] = 킥 · 무브 · 디펜스 · 범위 — core/career.gd _stat_ok 와 같다
+constexpr int GROW_N = 4;
+bool grow_ok(int pos, const int st[4], int k);
 enum StatKind { ST_SHOT = 0, ST_PASS = 1, ST_DRIBBLE = 2, ST_DEF = 3 };
 void set_trial(State &s, int team_n);   // 시험판: 팀 인원 · 스킬 패시브
 extern int g_skill_pow;

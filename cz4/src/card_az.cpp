@@ -45,8 +45,6 @@ void net_input(const State &s, int team, NetInput &in) {
 			add(in, OFF_FWDMOVED + rel * NT + tile);   // 족보 +1 토큰 (11-21 — 옛 빈 칸 재사용)
 		if (q.stance > 0 && q.stance_left >= 2)
 			add(in, OFF_LASTPASS + rel * NT + tile);   // 태세가 한 차례 더 남음 (월 2차례 — 옛 빈 칸 재사용)
-		if (q.charge)
-			add(in, OFF_LASTPASS + (2 + rel) * NT + tile);   // 공격 태세 모음·발동 (11-22 — 옛 빈 칸 뒤 140칸)
 		if (s.ball_owner == q.uid)
 			add(in, OFF_BALL + rel * NT + tile);
 		if (marked(s, q))
@@ -172,10 +170,6 @@ int action_index(const State &s, const Action &a) {
 			if (a.uid < 0 || a.uid > POOL_N || !in_bounds(a.dest))
 				return -1;
 			return OFF_PLACE + a.uid * NT + flip_tile(a.dest, team);
-		case A_SAVE:   // 공 없는 선수 「강하게」 (11-22) — 옛 키퍼 킥 칸 OFF_SAVE + 자기 칸
-			if (!in_bounds(a.dest))
-				return -1;
-			return OFF_SAVE + flip_tile(a.dest, team);
 		default:
 			return -1;
 	}
@@ -885,7 +879,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	// 만능은 뺌 (11-20 사용자 「만능은 없고, 각 직업 4명씩」 — 옛 만능 에이스는 직업을 받음)
 	constexpr int JOBS_N = 10;   // 11-22 직업 10개 (중거리 슈터·패서 = 옛 부스터·노마드 자리)
 	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, LONGSHOT, PASSER };
-	int pos[PER_TEAM], bonus[PER_TEAM][4] = {};
+	int pos[PER_TEAM], bonus[PER_TEAM][4] = {}, rng_up[PER_TEAM] = {}, krng_up[PER_TEAM] = {}, hold0[PER_TEAM] = {};
 	int used = 0;
 	const int prospects = int(next() % (PER_TEAM + 1));   // 유망주 0~5명
 	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 스탯 합 0 ~ 3 × level
@@ -903,22 +897,26 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			used |= 1 << k;
 			pos[i] = POOL[k];
 		}
-		int st[3] = { 0, 0, 0 };   // 킥 · 무브 · 디펜스
-		if (pos[i] != PROSPECT && level > 0) {   // 스탯업은 전직한 선수만 (커리어와 같다)
-			const int n = int(next() % (3 * level + 1));
+		int st[4] = { 0, 0, 0, 0 };   // 킥 · 무브 · 디펜스 · 범위(마에스트로 패스 · 스프린터 무브)
+		if (pos[i] != PROSPECT && level > 0) {   // 성장은 전직한 선수만 — 커리어와 같은 길 (core/career.gd GROW_MAIN · 11-22)
+			const int n = std::min(GROW_N, int(next() % (2 * level + 1)));
 			for (int b = 0; b < n; b++) {
-				int k = int(next() % 3);
-				for (int t = 0; t < 3 && st[k] >= 3; t++)
-					k = (k + 1) % 3;
-				if (st[k] < 3)
-					st[k]++;
+				int ok[4], m = 0;
+				for (int k = 0; k < 4; k++)
+					if (grow_ok(pos[i], st, k))
+						ok[m++] = k;
+				if (!m)
+					break;
+				st[ok[next() % m]]++;
 			}
 		}
+		(pos[i] == MAESTRO ? krng_up : rng_up)[i] = st[3];
 		bonus[i][ST_SHOT] = bonus[i][ST_PASS] = st[0];
 		bonus[i][ST_DRIBBLE] = st[1];
 		bonus[i][ST_DEF] = st[2];
 	}
 	set_lineup(s, team, pos, bonus);
+	set_perks(s, team, rng_up, hold0, krng_up);
 }
 
 // 일기토 수 하나를 기록으로 (자가대전 — 망이 일기토 판단도 배우게). 정책 = duel::ai_act가 숨은 경우들을 더한 것

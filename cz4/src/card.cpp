@@ -45,15 +45,15 @@ static bool sk_power(int pos, int sk, int use) {   // 이 수가 힘 +1 스킬�
 		return false;
 	const bool all = pos == ALLROUND && sk == 1;
 	const bool kick = use == U_PASS || use == U_SHOT, mv = use == U_MOVE || use == U_DRIBBLE;
-	// 11-22 직업 10개: 캐논 = 슛 힘 · 패서 = 패스 힘 · 트릭스터 = 무브 힘 · 헌터 = 수비 힘 (만능은 다)
+	// 11-22 직업 10개: 캐논 = 슛 힘 · 패서 = 패스 힘 · 트릭스터 = 무브 힘 · 헌터 = 수비 힘 (중거리 슈터는 「슛이 거리로 안 약해짐」 — act_power · 만능은 다)
 	return (use == U_SHOT && pos == CANNON) || (use == U_PASS && pos == PASSER) || (kick && all) || (mv && (pos == TRICKSTER || all)) || (use == U_STANCE && (pos == HUNTER || all));
 }
 static bool sk_range(int pos, int sk, int want) {   // 이 수가 범위 +1 스킬인가
 	if (!sk)
 		return false;
 	const bool all = pos == ALLROUND && sk == 2;
-	// 11-22: 마에스트로 = 패스 범위 · 중거리 슈터 = 슛 범위 · 스프린터 = 무브 범위
-	return (want == C_KICK && (pos == MAESTRO || all)) || (want == C_SHOT && (pos == LONGSHOT || all)) || (want == C_MOVE && (pos == SPRINTER || all));
+	// 11-22: 마에스트로 = 패스 범위 +1 · 스프린터 = 무브 범위 +1 (성장은 perks — kick_range_up · range_up)
+	return (want == C_KICK && (pos == MAESTRO || all)) || (want == C_MOVE && (pos == SPRINTER || all));
 }
 
 int g_skill_pow = 1;
@@ -201,9 +201,6 @@ static bool wall_hit(const State &s, int uid) {
 static bool support_hit(V2 a0, V2 a1, V2 b0, V2 b1) { return manhattan(a0, b0) > JK_NEAR && manhattan(a1, b1) <= JK_NEAR; }
 
 static void set_owner(State &s, int uid) {
-	for (Player &q : s.players)
-		if (q.uid != uid)
-			q.charge = 0;   // 공을 놓으면 공격 태세는 사라진다
 	s.ball_owner = uid;
 	s.ball_pos = UNPLACED;
 	s.loose_team = -1;
@@ -280,7 +277,7 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 		v += g_skill_pow;
 	// 거리 반비례: 힘 = 능력치 + 1 − 거리 (킥 4 → 1칸 4 · 2칸 3 · 3칸 2 · 4칸 1 · 드리블 3 → 3 · 2 · 1, 거리 0 = 공을 잡고 선 힘 = 능력치)
 	// 측정용 CF_KICK_FLAT=1 이면 킥은 거리와 상관없이 수치 그대로
-	const int dd = p.charge == 2 ? 1 : d;   // 「강하게」 = 거리로 안 약해짐 (늘 1칸 힘 — 11-22 사용자)
+	const int dd = use == U_SHOT && p.position == LONGSHOT ? 1 : d;   // 중거리 슈터 = 슛이 거리로 안 약해짐 (늘 1칸 힘 — 11-22 사용자, 「강하게」 없앰)
 	if ((kick && !g_kick_flat) || use == U_DRIBBLE)
 		v += 1 - dd;   // 힘 = 능력치 + 1 − 거리 (킥·드리블 같은 식 — 11-22, 킥 4 · 무브 3)
 	if ((use == U_MOVE || use == U_DRIBBLE) && marked(s, p))
@@ -288,17 +285,33 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 	return std::max(1, v) + p.jk_up;   // 족보 +1 토큰은 거리로 깎인 뒤에 더한다 (먼 슛도 +1 그대로 — 최대 +1)
 }
 
+bool grow_ok(int pos, const int st[4], int k) {
+	int sum = st[0] + st[1] + st[2] + st[3];
+	if (sum >= GROW_N)
+		return false;
+	if (pos == TITAN || pos == MARKER || pos == ALLROUND)
+		return k < 3 && st[k] < 3;   // 자유
+	const int main = pos == CANNON || pos == LONGSHOT || pos == PASSER ? 0 : pos == TRICKSTER ? 1 : pos == HUNTER || pos == WALL ? 2 : pos == MAESTRO || pos == SPRINTER ? 3 : -1;
+	if (main < 0)
+		return false;
+	if (st[main] < 2)
+		return k == main;   // 주 능력 +2 먼저
+	const int never = pos == MAESTRO ? 0 : pos == SPRINTER ? 1 : -1;   // 마에스트로 킥 · 스프린터 무브는 못 키움
+	return k != main && k != never && k < 3 && st[k] < 1;
+}
+
 int act_range(const State &s, const Player &p, int want, int skl) {
 	skl = skl_now(s, p, skl);
 	const bool sr = s.sk_passive ? sk_range(p.position, 1, want) || sk_range(p.position, 2, want) : sk_range(p.position, skl, want);
 	int r;
-	if (want == C_KICK || want == C_SHOT) {
-		r = KICK_RANGE + p.kick_range_up;
-	} else {
-		r = move_stat(p) + p.range_up;
-	}
+	if (want == C_SHOT)
+		r = KICK_RANGE;                       // 슛 범위 4 고정 (중거리 슈터도 — 안 약해질 뿐)
+	else if (want == C_KICK)
+		r = KICK_RANGE + p.kick_range_up;     // 패스 범위 — 마에스트로 성장 (perks)
+	else
+		r = MOVE_RANGE + p.range_up;          // 무브 범위 3 고정 — 힘(무브 수치)과 따로 (11-22 사용자) · 스프린터 성장 (perks)
 	if (sr)
-		r += want == C_MOVE ? g_range_bonus : 2 * g_range_bonus;   // 마에스트로 패스 · 중거리 슈터 슛 범위 +2 · 스프린터 무브 +1 (11-22)
+		r += g_range_bonus;   // 마에스트로 패스 · 스프린터 무브 범위 +1 (11-22)
 	if (want == C_MOVE && marked(s, p))
 		r -= 1;   // 마커 곁 = 무브 범위 −1 (11-22)
 	return std::max(1, r);
@@ -374,7 +387,7 @@ static void turn_start(State &s, int team) {   // 우리 차례 시작: 태세 �
 	turn_clear(s);
 	s.jk_turn[team] = carried;   // 남의 차례에 걸린 족보는 이 차례의 「한 번」
 	for (Player &p : s.players)
-		p.charge = 0, p.acted = 0;   // 「강하게」·행동 표시는 그 차례 안에서만 (11-22)
+		p.acted = 0;   // 행동 표시는 그 차례 안에서만 (11-22)
 	for (Player &p : s.players)
 		if (p.team == team) {
 			if (p.jk_up) {   // 족보 +1 토큰은 「다음 상대 차례까지」 — 붙인 만큼 되돌린다
@@ -478,7 +491,6 @@ static void reset_shape(State &s, int stay = -1) {
 	for (Player &p : s.players) {   // 제자리 팀은 놓인 순서도 그대로 (일기토처럼 판 밖 선수가 있는 판에서 판 밖 선수를 세우지 않게)
 		p.stance = 0;
 		p.stance_left = 0;
-		p.charge = 0;
 		p.acted = 0;
 	}
 	s.ball_owner = -1;
@@ -1026,7 +1038,7 @@ static void approach_tackle(State &s, int uid, int steps) {
 	const Player &p = s.players[uid];
 	if (s.ball_owner < 0 || s.players[s.ball_owner].team == p.team || manhattan(p.pos, s.players[s.ball_owner].pos) != 1 || is_any_box(p.pos))
 		return;
-	tackle_do(s, uid, std::max(1, act_power(s, p, U_STANCE) + 1 - (p.charge == 2 ? 1 : std::max(1, steps))));   // 「강하게」면 1칸 힘
+	tackle_do(s, uid, std::max(1, act_power(s, p, U_STANCE) + 1 - std::max(1, steps)));
 }
 
 // ---------- 액션 ----------
@@ -1256,9 +1268,9 @@ static void run_to(State &s, int mate, V2 dest) {
 
 static bool do_run(State &s, int uid, V2 dest, int mate) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || !may_carry(s, p) || !run_dest_ok(s, p.team, p.pos.x, dest) || !mate_ok(s, p.team, uid, mate, dest))
-		return false;
 	const int dist = manhattan(p.pos, dest);
+	if (!can_act(s, p) || !may_carry(s, p) || !(p.position == PASSER || (p.position == MAESTRO && dist >= LONG_PASS_MIN)) || !run_dest_ok(s, p.team, p.pos.x, dest) || !mate_ok(s, p.team, uid, mate, dest))
+		return false;   // 스루패스 = 패서만 · 마에스트로는 공중볼로만 (11-22)
 	const int pow = act_power(s, p, U_PASS, dist);
 	std::vector<V2> path = kick_path(s, p, dest, pow);
 	if (path.empty())
@@ -1318,33 +1330,9 @@ static bool can_stance(const State &s, const Player &p) {
 	return can_act(s, p) && s.ball_owner != p.uid && !kickoff_turn(s) && p.stance == 0 && !is_any_box(p.pos);
 }
 
-// 「강하게」 (11-22 사용자 — 옛 공격 태세 C안 대신): 킥·무브를 포인트 2개로 하면 거리로 안 약해짐(1칸 힘).
-// 엔진에서는 「힘 모으기(공 임자 제자리 A_STANCE, 1포인트) → 바로 다음 킥·무브(1포인트)」 두 수 — 망 행동 칸 그대로. 화면은 「강하게」 단추 하나
-static bool atk_stance_ok(const State &s, const Player &p) {
-	return s.ball_owner == p.uid && p.charge == 0 && s.pts >= 2 && can_act(s, p) && !kickoff_turn(s);
-}
-
-// 「강하게」 공 없는 선수 (11-22 사용자 「무엇이든 포인트 2면 거리로 안 약해짐」): 1포인트 모으기 → 이어지는 이동(다가가 태클)이 거리로 안 약해짐
-static bool do_charge(State &s, int uid, V2 dest) {
-	Player &q = s.players[uid];
-	if (dest != q.pos || s.ball_owner == uid || q.charge != 0 || s.pts < 2 || !can_act(s, q) || kickoff_turn(s))
-		return false;
-	pay_point(s);
-	q.charge = 2;
-	after_action(s, q.team);
-	return true;
-}
-
 static bool do_stance(State &s, int uid, V2 dest) {
-	if (s.ball_owner == uid) {
-		Player &q = s.players[uid];
-		if (dest != q.pos || !atk_stance_ok(s, q))
-			return false;
-		pay_point(s);
-		q.charge = 2;   // 이번 차례 다음 킥·무브에 바로
-		after_action(s, q.team);
-		return true;
-	}
+	if (s.ball_owner == uid)
+		return false;   // 공 임자 디펜스 없음 (11-22 「강하게」 없앰)
 	const Player &p = s.players[uid];
 	const int dir = stance_dir(p, dest);
 	if (!can_stance(s, p) || dir < 0)
@@ -1486,20 +1474,14 @@ bool value_path(const State &s, const Action &a, PathValue val, const void *ctx,
 }
 
 
-static bool spend_charge(State &s, int uid, bool ok) {   // 발동한 공격 태세는 첫 킥·무브 1번에 쓴다
-	if (ok && s.players[uid].charge == 2)
-		s.players[uid].charge = 0;
-	return ok;
-}
 
 static bool apply_one(State &s, const Action &a);
 
-static bool apply_inner(State &s, const Action &a) {   // 한 선수는 한 차례에 행동 하나 (11-22) — 「강하게」 모으기(공 임자 제자리 디펜스)는 행동으로 안 센다(바로 이어지는 킥·무브까지 한 행동)
-	const bool strong = (a.t == A_STANCE && a.uid >= 0 && a.uid < PLAYERS && s.ball_owner == a.uid) || a.t == A_SAVE;
+static bool apply_inner(State &s, const Action &a) {   // 한 선수는 한 차례에 행동 하나 (11-22)
 	const int team = s.turn_team;
 	if (!apply_one(s, a))
 		return false;
-	if (!strong && a.uid >= 0 && a.uid < PLAYERS && a.t != A_PLACE && s.players[a.uid].team == team && s.turn_team == team)
+	if (a.uid >= 0 && a.uid < PLAYERS && a.t != A_PLACE && s.players[a.uid].team == team && s.turn_team == team)
 		s.players[a.uid].acted = 1;
 	return true;
 }
@@ -1508,13 +1490,12 @@ static bool apply_one(State &s, const Action &a) {
 	const bool u = a.uid >= 0 && a.uid < PLAYERS;
 	switch (a.t) {
 		case A_PLACE: return do_place(s, a.uid, a.dest);
-		case A_MOVE: return u && spend_charge(s, a.uid, do_move(s, a.uid, a.dest));
-		case A_DRIBBLE: return u && spend_charge(s, a.uid, do_dribble(s, a.uid, a.dest));
-		case A_PASS: return u && spend_charge(s, a.uid, do_pass(s, a.uid, a.dest));
-		case A_RUN: return u && spend_charge(s, a.uid, do_run(s, a.uid, a.dest, a.mate));
-		case A_SHOT: return u && spend_charge(s, a.uid, do_shot(s, a.uid));
+		case A_MOVE: return u && do_move(s, a.uid, a.dest);
+		case A_DRIBBLE: return u && do_dribble(s, a.uid, a.dest);
+		case A_PASS: return u && do_pass(s, a.uid, a.dest);
+		case A_RUN: return u && do_run(s, a.uid, a.dest, a.mate);
+		case A_SHOT: return u && do_shot(s, a.uid);
 		case A_STANCE: return u && do_stance(s, a.uid, a.dest);
-		case A_SAVE: return u && do_charge(s, a.uid, a.dest);   // 공 없는 선수 「강하게」 (11-22 — 옛 키퍼 킥 번호)
 	}
 	return false;   // 차례 끝 수는 없다 (11-21 사용자 — 포인트를 다 쓴다, 둘 수가 없을 때만 저절로 끝)
 }
@@ -1589,7 +1570,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 						continue;
 					if (pass_dest_ok(s, q, t)) {
 						out.push_back({ A_PASS, u, t, -1, sk });
-					} else if (!sk && run_dest_ok(s, team, q.pos.x, t)) {   // 빈 칸 패스 = 앞쪽 빈 칸 + 받을 동료가 닿음 (11-22)만 (11-21 사용자)
+					} else if (!sk && (q.position == PASSER || (q.position == MAESTRO && dist >= LONG_PASS_MIN)) && run_dest_ok(s, team, q.pos.x, t)) {   // 스루패스(빈 칸 패스 = 앞쪽 빈 칸 + 받을 동료가 닿음) = 패서만 · 마에스트로는 공중볼로만 (11-22 사용자)
 						for (int m = team * PER_TEAM; m < (team + 1) * PER_TEAM; m++)
 							if (mate_ok(s, team, u, m, t)) {
 								Action a{ A_RUN, u, t, -1 };
@@ -1604,16 +1585,12 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 				bool blocked[NT];
 				path_blocked(s, team, -1, true, blocked);
 				Reach sr;
-				const int sr_n = act_range(s, q, C_SHOT, sk);   // 슛 범위 (11-22 — 중거리 슈터 +2)
+				const int sr_n = act_range(s, q, C_SHOT, sk);   // 슛 범위 4
 				reach(q.pos, sr_n, blocked, goal, sr);
 				if (sr.has(goal) && manhattan(q.pos, goal) <= sr_n)
 					out.push_back({ A_SHOT, u, goal, -1, sk });
 			}
 		}
-		if (do_df && atk_stance_ok(s, q))   // 공 임자 「강하게」 (11-22)
-			out.push_back({ A_STANCE, u, q.pos, -1, sk });
-		if (!sk && s.ball_owner != u && q.charge == 0 && s.pts >= 2 && !kickoff_turn(s))   // 공 없는 선수 「강하게」 (11-22)
-			out.push_back({ A_SAVE, u, q.pos, -1, 0 });
 		if (do_df && can_stance(s, q))   // 수비 = 곁 한 칸을 골라 존 (판 밖·골대 ×) · 월은 제자리 사방
 			for (int k = zone_all(q) ? ZD_ALL : 0; k <= ZD_ALL; k++) {
 				const V2 t = k == ZD_ALL ? q.pos : q.pos + DIRS[k];

@@ -245,8 +245,6 @@ float defend(const State &s, const Sit &x, const float *S, int tac, const Player
 			return 0.25f * tk * std::max(-2, std::min(3, closer));
 		if (a.t == A_STANCE)
 			return adj ? 0.3f * S[TACKLE] + 0.5f : 0.0f;   // 붙어서 태클
-		if (a.t == A_SAVE)
-			return (S[TACKLE] - 5) * 0.3f;   // 「강하게」 다가가 태클 (공 없는 선수 포인트 2)
 		return 0.0f;
 	}
 	// 자리 지키는 선수: 11 라인 + 역할 자리 · 12 마크(사람이면 위험한 상대 곁, 지역이면 자리)
