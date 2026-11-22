@@ -45,6 +45,8 @@ void net_input(const State &s, int team, NetInput &in) {
 			add(in, OFF_FWDMOVED + rel * NT + tile);   // 족보 +1 토큰 (11-21 — 옛 빈 칸 재사용)
 		if (q.stance > 0 && q.stance_left >= 2)
 			add(in, OFF_LASTPASS + rel * NT + tile);   // 태세가 한 차례 더 남음 (월 2차례 — 옛 빈 칸 재사용)
+		if (q.charge)
+			add(in, OFF_LASTPASS + (2 + rel) * NT + tile);   // 공격 태세 모음·발동 (11-22 — 옛 빈 칸 뒤 140칸)
 		if (s.ball_owner == q.uid)
 			add(in, OFF_BALL + rel * NT + tile);
 		if (marked(s, q))
@@ -58,7 +60,7 @@ void net_input(const State &s, int team, NetInput &in) {
 			add(in, OFF_PERK + (rel * 2 + 1) * NT + tile);
 		if (q.position == ALLROUND)
 			add(in, OFF_ALLROUND + rel * NT + tile);
-		// OFF_LASTPASS·OFF_FWDMOVED(옛 족보 진행)는 11-21 부터 늘 0
+		// OFF_LASTPASS 앞 140 = 월 2차례 · 뒤 140 = 공격 태세(11-22) · OFF_FWDMOVED = 족보 토큰(족보 끔 — 늘 0)
 	}
 	if (s.phase == PLAY && s.turn_team >= 0)   // 이번 차례 지나간 칸 (11-21 되돌아가기 금지) — 두는 팀의 것
 		for (int i = 0; i < NT; i++) {
@@ -356,6 +358,8 @@ static inline float with_aux(float v, double aux, double w) {   // w = 0 이면 
 		return v;
 	return float(std::max(-1.0, std::min(1.0, double(v) + w * std::max(-1.0, std::min(1.0, aux)))));
 }
+
+float (*g_tac_score)(const State &s, const Action &a, const Style &st) = nullptr;
 
 // ---------- 팀 성격 덤 (11-12) ----------
 // 크기는 logit 단위 — 망 정책의 수 사이 logit 차가 보통 몇 단위라 덤 1 안팎은 「비슷한 수 중에서 고르는 버릇」 정도다 (값과 측정: ui/card_match.gd STYLE_W 설명)
@@ -723,6 +727,24 @@ Result search(const State &s0, const Net &net, const Params &p, Reuse *keep) {
 	std::sort(cand.begin(), cand.end(), [&](int a, int b) { return g[a] + r0.logits[a] > g[b] + r0.logits[b]; });
 	int m = std::min<int>(p.top_m, int(k));
 	cand.resize(m);
+	std::vector<float> ts;   // 전술 대본 점수 (11-22) — 높은 수 넷은 꼭 탐색한다
+	const bool tac = g_tac_score && p.style.tac >= 0 && r0.mover == p.style_team;
+	if (tac) {
+		ts.resize(k);
+		for (size_t i = 0; i < k; i++)
+			ts[i] = g_tac_score(s0, r0.acts[i], p.style);
+		std::vector<int> ord(k);
+		for (size_t i = 0; i < k; i++)
+			ord[i] = int(i);
+		std::sort(ord.begin(), ord.end(), [&](int a, int b) { return ts[a] > ts[b]; });
+		for (int j = 0, add = 0; j < int(k) && add < 4; j++)
+			if (std::find(cand.begin(), cand.end(), ord[j]) == cand.end()) {
+				cand.push_back(ord[j]);
+				add++;
+			}
+		m = int(cand.size());
+	}
+	const std::vector<int> cand0 = cand;
 	if (m > 1) {
 		int phases = 0;
 		for (int x = m; x > 1; x = (x + 1) / 2)
@@ -760,6 +782,21 @@ Result search(const State &s0, const Net &net, const Params &p, Reuse *keep) {
 	Node &r = tree.nodes[root];
 	res.found = true;
 	res.action = r.acts[cand[0]];
+	if (tac) {   // 허용 폭 안에서 대본 점수가 가장 높은 수 (값은 많이 간 수만 믿는다)
+		int nmin = std::max(2, p.sims / (4 * std::max(1, m)));
+		double best = -2.0;
+		for (int a : cand0)
+			if (r.n[a] >= nmin)
+				best = std::max(best, r.w[a] / r.n[a]);
+		int pick = cand[0];
+		for (int a : cand0)
+			if (r.n[a] >= nmin && r.w[a] / r.n[a] >= best - p.style.eps && (ts[a] > ts[pick] || (ts[a] == ts[pick] && r.w[a] / r.n[a] > r.w[pick] / std::max(1, r.n[pick]))))
+				pick = a;
+		if (r.acts[cand[0]].t == A_SHOT && r.w[cand[0]] / std::max(1, r.n[cand[0]]) > 0.0)
+			pick = cand[0];   // 득점 기회(값이 이기는 쪽인 슛)는 대본이 가로채지 않는다
+		if (r.n[pick] >= nmin || pick == cand[0])
+			cand[0] = pick, res.action = r.acts[pick];
+	}
 	res.leaf_turns = float(tree.leaf_turns / std::max(1, tree.leaves));
 	for (int ci = r.child[cand[0]], prev = r.mover; ci >= 0;) {   // 주된 갈래: 뽑은 수 → 그다음은 가장 많이 간 자식
 		const Node &nd = tree.nodes[ci];

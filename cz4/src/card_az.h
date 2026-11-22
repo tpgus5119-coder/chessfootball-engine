@@ -87,8 +87,12 @@ void aux_from_env();
 struct Style {
 	float poss = 0.0f, ctr = 0.0f, press = 0.0f, hold = 0.0f;
 	float jk = 0.0f;   // 족보 의지 (11-12 둘째) — 족보를 완성하는 카드에 덤, 이어 가는 카드엔 작은 덤
-	bool on() const { return poss != 0.0f || ctr != 0.0f || press != 0.0f || hold != 0.0f || jk != 0.0f; }
+	int tac = -1;      // 전술 대본 (11-22, card_tactic.cpp): 0 게겐프레싱 · 1 티키타카 · 2 카테나치오 · −1 없음
+	float eps = 0.0f;  // 허용 폭: 뿌리에서 탐색 값이 최선 − eps 안인 수들 가운데 대본 점수가 가장 높은 수를 둔다
+	float pass = 0.0f; // 대본 패스 덤 (공격 중 패스·뒷공간 패스)
+	bool on() const { return poss != 0.0f || ctr != 0.0f || press != 0.0f || hold != 0.0f || jk != 0.0f || tac >= 0; }
 };
+extern float (*g_tac_score)(const State &s, const Action &a, const Style &st);   // card_tactic.cpp 가 채운다 (없으면 대본 없음 — 자가학습 gen3 은 링크하지 않음)
 float style_bias(const State &s, const Action &a, const Style &st);   // 그 수의 logit 덤 (s.turn_team 이 두는 수)
 
 struct Params {
