@@ -918,7 +918,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 				st[ok[next() % m]]++;
 			}
 		}
-		(pos[i] == MAESTRO ? krng_up : pos[i] == WALL ? hold_up : rng_up)[i] = st[4];
+		(pos[i] == MAESTRO || pos[i] == LONGSHOT ? krng_up : pos[i] == WALL ? hold_up : rng_up)[i] = st[4];
 		bonus[i][ST_SHOT] = st[0];
 		bonus[i][ST_PASS] = st[1];
 		bonus[i][ST_DRIBBLE] = st[2];

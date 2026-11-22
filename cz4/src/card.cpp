@@ -298,12 +298,12 @@ bool grow_ok(int pos, const int st[GROW_K], int k) {
 		return false;
 	if (pos == TITAN || pos == MARKER || pos == ALLROUND)
 		return k < 4 && st[k] < 3;   // 자유 (슛·패스·무브·디펜스 — 스탯마다 +3)
-	const int main = pos == CANNON || pos == LONGSHOT ? 0 : pos == PASSER ? 1 : pos == TRICKSTER ? 2 : pos == HUNTER ? 3 : pos == MAESTRO || pos == SPRINTER || pos == WALL ? 4 : -1;   // 4 = 특수(마에스트로 패스 범위 · 스프린터 무브 범위 · 월 지속)
+	const int main = pos == CANNON ? 0 : pos == PASSER ? 1 : pos == TRICKSTER ? 2 : pos == HUNTER ? 3 : pos == MAESTRO || pos == SPRINTER || pos == WALL || pos == LONGSHOT ? 4 : -1;   // 4 = 특수(마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속)
 	if (main < 0)
 		return false;
 	if (st[main] < 1)
 		return k == main;   // 주 능력 +1 먼저 (전직 + 1 = 주 능력 줄 2칸 — 11-22 넷째)
-	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘은 못 키움
+	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : pos == LONGSHOT ? 0 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘 · 중거리 슈터 슛 힘은 못 키움
 	return k != main && k != never && k < 4 && st[k] < 1;
 }
 
@@ -312,9 +312,9 @@ int act_range(const State &s, const Player &p, int want, int skl) {
 	const bool sr = s.sk_passive ? sk_range(p.position, 1, want) || sk_range(p.position, 2, want) : sk_range(p.position, skl, want);
 	int r;
 	if (want == C_SHOT)
-		r = KICK_RANGE;                       // 슛 범위 4 고정 (중거리 슈터도 — 안 약해질 뿐)
+		r = KICK_RANGE + (p.position == LONGSHOT ? p.kick_range_up : 0);   // 슛 범위 4 — 중거리 슈터만 성장으로 는다 (perks, 11-22 넷째)
 	else if (want == C_KICK)
-		r = KICK_RANGE + p.kick_range_up;     // 패스 범위 — 마에스트로 성장 (perks)
+		r = KICK_RANGE + (p.position == LONGSHOT ? 0 : p.kick_range_up);   // 패스 범위 — 마에스트로 성장 (perks)
 	else
 		r = MOVE_RANGE + p.range_up;          // 무브 범위 3 고정 — 힘(무브 수치)과 따로 (11-22 사용자) · 스프린터 성장 (perks)
 	if (sr)
