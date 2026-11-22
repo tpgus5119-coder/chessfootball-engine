@@ -37,7 +37,6 @@ int g_zone4 = 1;         // 수비 존 = 모든 선수 제자리 사방 4칸 (11
 int g_drib_short = 1;    // 드리블 범위 = 이동 범위 − 1 (11-21 사용자 「드리블 −1」 — 규칙. 공 없이 뛰는 범위는 그대로 · 비교용 CF_DRIB_SHORT=0)
 int g_keep_pts = 0;      // CF_KEEP_PTS=1: 자기 차례에 공을 뺏겨도 남은 포인트로 차례를 이어 간다
 int g_kick_flat = 0;     // CF_KICK_FLAT=1: 킥 힘이 거리로 안 줄어듦
-int g_stance_lock = 0;   // CF_STANCE_LOCK=1: 태세 중인 선수는 이동 못 함
 
 static inline bool has_passive(int position, int want) { return position == want || position == ALLROUND; }
 
@@ -149,7 +148,6 @@ static void jk_fire(State &s, int team, int k, int u1, int u2 = -1) {
 }
 
 void turn_clear(State &s) {
-	std::memset(s.vis_p, 0, sizeof(s.vis_p));
 	std::memset(s.vis_b, 0, sizeof(s.vis_b));
 	s.jk_turn[0] = s.jk_turn[1] = 0;
 	s.jk_next[0] = s.jk_next[1] = 0;
@@ -383,7 +381,7 @@ static void turn_start(State &s, int team) {   // 우리 차례 시작: 태세 �
 	else if (s.loose_ball())
 		vis_add(s.vis_b, s.ball_pos);
 	for (Player &p : s.players)
-		p.charge = 0;   // 「강하게」는 그 차례 안에서만 (11-22)
+		p.charge = 0, p.acted = 0;   // 「강하게」·행동 표시는 그 차례 안에서만 (11-22)
 	for (Player &p : s.players)
 		if (p.team == team) {
 			if (p.jk_up) {   // 족보 +1 토큰은 「다음 상대 차례까지」 — 붙인 만큼 되돌린다
@@ -488,6 +486,7 @@ static void reset_shape(State &s, int stay = -1) {
 		p.stance = 0;
 		p.stance_left = 0;
 		p.charge = 0;
+		p.acted = 0;
 	}
 	s.ball_owner = -1;
 	s.ball_pos = UNPLACED;
@@ -562,7 +561,6 @@ void knobs_from_env() {
 	num("CF_KEEP_PTS", g_keep_pts);
 	num("CF_DRIB_SHORT", g_drib_short);
 	num("CF_KICK_FLAT", g_kick_flat);
-	num("CF_STANCE_LOCK", g_stance_lock);
 	if (getenv("CF_NO_TIME") && atoi(getenv("CF_NO_TIME")))
 		g_time_input = 0;
 	if (const char *e = getenv("CF_JK"))   // 족보 켬 덮어쓰기 (측정용): "1,1,0,1,1,1" — card.h Jokbo 순서
@@ -630,11 +628,11 @@ void end_turn(State &s) {
 static bool any_action(const State &s) {
 	const bool ko = kickoff_turn(s);
 	for (const Player &p : s.players) {
-		if (p.team != s.turn_team || !p.placed() || ko)
+		if (p.team != s.turn_team || !p.placed() || ko || p.acted)
 			continue;
 		for (const V2 &d : DIRS) {
 			const V2 t = p.pos + d;
-			if (in_bounds(t) && !player_at(s, t) && !is_goal(t) && !is_any_box(t) && !vis_has(s.vis_p[p.uid], t) && !(s.ball_owner == p.uid && vis_has(s.vis_b, t)))
+			if (in_bounds(t) && !player_at(s, t) && !is_goal(t) && !is_any_box(t) && !(s.ball_owner == p.uid && vis_has(s.vis_b, t)))
 				return true;
 		}
 	}
@@ -972,25 +970,21 @@ static void titan_push(State &s, const Player &p) {
 	}
 }
 
-// 길 벽 (11-21 되돌아가기 금지): 적의 몸·골대 + 이번 차례 그 사람(who ≥ 0)이 있었던 칸 + (ball) 공이 있었던 칸
+// 길 벽 (11-21 되돌아가기 금지): 적의 몸·골대 + (ball) 이번 차례 공이 있었던 칸 (who 는 옛 사람 칸 — 11-22 없앰, 인자만 남음)
 static void path_blocked(const State &s, int team, int who, bool ball, bool blocked[NT]) {
 	body_blocked(s, team, blocked);
 	for (int i = 0; i < NT; i++) {
 		const V2 t{ i % W, i / W };
-		if ((who >= 0 && vis_has(s.vis_p[who], t)) || (ball && vis_has(s.vis_b, t)))
+		if (ball && vis_has(s.vis_b, t))
 			blocked[i] = true;
 	}
 }
 
-// 지나간 칸 기록: 출발 칸과 길의 칸을 끝 칸(end)까지 — 사람(who ≥ 0) · 공(ball)
-static void vis_path(State &s, int who, bool ball, V2 from, const std::vector<V2> &path, V2 end) {
-	if (who >= 0)
-		vis_add(s.vis_p[who], from);
+// 지나간 칸 기록: 출발 칸과 길의 칸을 끝 칸(end)까지 — 공(ball)만 (사람 쪽은 11-22 한 선수 행동 하나로 없앰)
+static void vis_path(State &s, bool ball, V2 from, const std::vector<V2> &path, V2 end) {
 	if (ball)
 		vis_add(s.vis_b, from);
 	for (const V2 &t : path) {
-		if (who >= 0)
-			vis_add(s.vis_p[who], t);
 		if (ball)
 			vis_add(s.vis_b, t);
 		if (t == end)
@@ -1029,30 +1023,41 @@ static bool tackle_ready(const State &s, const Player &t) {   // 태세 선수�
 	return h.team != t.team && in_zone(t, h.pos);
 }
 
-static void auto_tackle(State &s, int tuid) {
+// 태클 한 번 (11-22 사용자): 힘 tv > 버티는 힘이면 뺏음 · 아니면 버티는 힘을 tv 만큼 깎는다(HP — 패스를 받거나 새로 잡을 때만 다시 참) · 태클한 수비수 태세는 풀림
+static void tackle_do(State &s, int tuid, int tv) {
 	const Player &t = s.players[tuid];
-	if (!tackle_ready(s, t))
-		return;
-	jk_fire(s, t.team, JK_GEGEN, tuid);   // 게겐프레싱 = 태클 시도 (이기든 지든, 11-21) — 그 수비수 +1 이 이 태클에 바로 든다
+	jk_fire(s, t.team, JK_GEGEN, tuid);   // 게겐프레싱 = 태클 시도 (족보 꺼짐 — 늘 그냥 지나감)
 	const Player &h = s.players[s.ball_owner];
-	int tv = t.stance;
-	int hv = eff_hold(s);
-	bool win = tv > hv;
+	const int hv = eff_hold(s);
+	const bool win = tv > hv;
 	emit({ 0, tuid, h.uid, h.pos, tv, hv, win ? 1 : 0, {} });
-
 	if (win) {
 		set_owner(s, tuid);
 		mark_steal(s);
 	} else {
+		s.hold = std::max(0, hv - tv);
 		s.players[tuid].stance = 0;
 		s.players[tuid].stance_left = 0;
 	}
 }
 
+static void auto_tackle(State &s, int tuid) {   // 곁에서 디펜스 = 제자리 태클 (1칸 다가간 태클과 같은 힘 = 태세 힘)
+	if (tackle_ready(s, s.players[tuid]))
+		tackle_do(s, tuid, s.players[tuid].stance);
+}
+
+// 다가가면 태클 (11-22 사용자): 공 없이 이동해 상대 공 임자 곁(상하좌우)에 서면 태클 한 번 — 힘 = 수비 수치 + 1 − 움직인 칸(1칸 3 · 2칸 2 · 3칸 1, 헌터 +1)
+static void approach_tackle(State &s, int uid, int steps) {
+	const Player &p = s.players[uid];
+	if (s.ball_owner < 0 || s.players[s.ball_owner].team == p.team || manhattan(p.pos, s.players[s.ball_owner].pos) != 1 || is_any_box(p.pos))
+		return;
+	tackle_do(s, uid, std::max(1, act_power(s, p, U_STANCE) + 1 - std::max(1, steps)));
+}
+
 // ---------- 액션 ----------
 
 static bool can_act(const State &s, const Player &p) {
-	return s.phase == PLAY && p.placed() && p.team == s.turn_team && s.pts >= 1;
+	return s.phase == PLAY && p.placed() && p.team == s.turn_team && s.pts >= 1 && !p.acted;   // 한 선수는 한 차례에 행동 하나 (11-22)
 }
 
 static bool may_carry(const State &s, const Player &p) {   // 공 임자 · 킥오프 차례면 킥오프 팀 누구나
@@ -1074,7 +1079,7 @@ static void move_blocked(const State &s, const Player &p, bool blocked[NT]) {
 
 static bool do_move(State &s, int uid, V2 dest) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || kickoff_turn(s) || s.ball_owner == uid || !move_dest_ok(s, p, dest) || (g_stance_lock && p.stance > 0))
+	if (!can_act(s, p) || kickoff_turn(s) || s.ball_owner == uid || !move_dest_ok(s, p, dest))
 		return false;
 	bool blocked[NT];
 	move_blocked(s, p, blocked);
@@ -1104,16 +1109,16 @@ static bool do_move(State &s, int uid, V2 dest) {
 		if (size_t(pk) + 1 < path.size())
 			dest = dribble_run(s, uid, pow0, std::vector<V2>(path.begin() + pk + 1, path.end()));
 		s.players[uid].pos = dest;
-		vis_path(s, -1, true, path[size_t(pk)], std::vector<V2>(path.begin() + pk, path.end()), dest);
+		vis_path(s, true, path[size_t(pk)], std::vector<V2>(path.begin() + pk, path.end()), dest);
 	} else {
 		s.players[uid].pos = dest;
 		const Player &me = s.players[uid];
-		if (!tackle_ready(s, me))   // 태세인 타이탄이 공 임자 곁에 닿으면 밀지 않고 태클만
+		const bool at_h = s.ball_owner >= 0 && s.players[s.ball_owner].team != team && manhattan(dest, s.players[s.ball_owner].pos) == 1;
+		if (!at_h)   // 공 임자 곁에 닿으면 밀지 않고 태클만
 			titan_push(s, me);
-		auto_tackle(s, uid);
+		approach_tackle(s, uid, int(path.size()));
 	}
 	const V2 end = s.players[uid].pos;
-	vis_path(s, uid, false, from, path, end);
 	const bool done = end == path.back() && (pk < 0 || s.ball_owner == uid);   // 끝까지 간 이동만 족보
 	if (done && own >= 0 && s.ball_owner == own && support_hit(from, end, s.players[own].pos, s.players[own].pos))
 		jk_fire(s, team, JK_SUPPORT, uid);   // 지원: 공 임자 2칸 밖에서 2칸 안으로
@@ -1146,9 +1151,9 @@ static bool do_dribble(State &s, int uid, V2 dest) {
 	pay_point(s);
 	const V2 end = dribble_run(s, uid, pow, path);
 	s.players[uid].pos = end;
-	vis_path(s, uid, true, from, path, end);
+	vis_path(s, true, from, path, end);
 	if (s.ball_owner == uid) {
-		s.hold = act_power(s, s.players[uid], U_DRIBBLE);   // 드리블 뒤 = 드리블 능력치 (경합은 거리 반비례 힘 pow 로 이미 했다 — 11-21)
+		// 드리블로는 버티는 힘이 다시 차지 않는다 (11-22 HP — 패스를 받거나 새로 잡을 때만)
 		if ((end.x - from.x) * forward_dir(team) > 0)
 			rep_add(s, uid, TRICKSTER);
 		if (end == path.back()) {   // 끝까지 간 드리블만 족보
@@ -1238,7 +1243,7 @@ static bool do_pass(State &s, int uid, V2 dest) {
 		set_owner(s, uid);
 	pay_point(s);
 	const bool cut = send_ball(s, p, pow, path);
-	vis_path(s, -1, true, from, path, dest);
+	vis_path(s, true, from, path, dest);
 	if (!cut) {
 		set_owner(s, ru);
 		// 받은 선수 버티는 힘 = 그 선수 드리블 능력치 (set_owner — 11-21 사용자)
@@ -1296,7 +1301,6 @@ static bool mate_ok(const State &s, int team, int kicker, int mate, V2 dest) {
 static void run_to(State &s, int mate, V2 dest) {
 	const std::vector<V2> run = mate_run(s, mate, dest);
 	emit({ 4, mate, -1, dest, 0, 0, 0, run });
-	vis_path(s, mate, false, s.players[mate].pos, run, dest);
 	s.players[mate].pos = dest;
 }
 
@@ -1317,7 +1321,7 @@ static bool do_run(State &s, int uid, V2 dest, int mate) {
 	run_to(s, mate, dest);
 	emit({ 4, uid, -1, dest, pow, dist >= LONG_PASS_MIN ? 1 : 0, 0, path });
 	const bool cut = send_ball(s, p, pow, path);
-	vis_path(s, -1, true, from, path, dest);
+	vis_path(s, true, from, path, dest);
 	if (!cut) {
 		set_owner(s, mate);
 		pass_jokbo(s, uid, mate, from, dest);
@@ -1527,7 +1531,19 @@ static bool spend_charge(State &s, int uid, bool ok) {   // 발동한 공격 태
 	return ok;
 }
 
-static bool apply_inner(State &s, const Action &a) {
+static bool apply_one(State &s, const Action &a);
+
+static bool apply_inner(State &s, const Action &a) {   // 한 선수는 한 차례에 행동 하나 (11-22) — 「강하게」 모으기(공 임자 제자리 디펜스)는 행동으로 안 센다(바로 이어지는 킥·무브까지 한 행동)
+	const bool strong = a.t == A_STANCE && a.uid >= 0 && a.uid < PLAYERS && s.ball_owner == a.uid;
+	const int team = s.turn_team;
+	if (!apply_one(s, a))
+		return false;
+	if (!strong && a.uid >= 0 && a.uid < PLAYERS && a.t != A_PLACE && s.players[a.uid].team == team && s.turn_team == team)
+		s.players[a.uid].acted = 1;
+	return true;
+}
+
+static bool apply_one(State &s, const Action &a) {
 	const bool u = a.uid >= 0 && a.uid < PLAYERS;
 	switch (a.t) {
 		case A_PLACE: return do_place(s, a.uid, a.dest);
@@ -1585,7 +1601,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 				if (carry) {
 					if (player_at(s, t) || is_any_box(t))
 						continue;
-				} else if (ko || s.ball_owner == u || !move_dest_ok(s, q, t) || (g_stance_lock && q.stance > 0)) {
+				} else if (ko || s.ball_owner == u || !move_dest_ok(s, q, t)) {
 					continue;
 				}
 				if (!carry && s.loose_ball() && is_any_box(t)) {
@@ -1641,7 +1657,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 			}
 	};
 	for (const Player &q : s.players) {
-		if (q.team != team || !q.placed())
+		if (q.team != team || !q.placed() || q.acted)   // 한 선수 행동 하나 (11-22)
 			continue;
 		gen(q, 0);
 		if (skill_can(s, q))

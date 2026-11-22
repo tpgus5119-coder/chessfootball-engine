@@ -20,7 +20,6 @@ inline void state(cf::card::State &s) {
 	s.ball_pos = v(s.ball_pos);
 	for (int i = 0; i < cf::PLAYERS; i++) {
 		s.half_pos[i] = v(s.half_pos[i]);
-		mask(s.vis_p[i]);
 		s.players[i].pos = v(s.players[i].pos);
 		int &zd = s.players[i].zdir;   // 존 방향 (11-21) — DIRS 2(+y)·3(−y) 가 바뀐다 · ±x 와 사방은 그대로
 		if (zd == 2 || zd == 3)

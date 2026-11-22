@@ -62,15 +62,19 @@ void net_input(const State &s, int team, NetInput &in) {
 			add(in, OFF_ALLROUND + rel * NT + tile);
 		// OFF_LASTPASS 앞 140 = 월 2차례 · 뒤 140 = 공격 태세(11-22) · OFF_FWDMOVED = 족보 토큰(족보 끔 — 늘 0)
 	}
-	if (s.phase == PLAY && s.turn_team >= 0)   // 이번 차례 지나간 칸 (11-21 되돌아가기 금지) — 두는 팀의 것
+	if (s.phase == PLAY && s.turn_team >= 0) {   // 두는 팀: 이번 차례에 행동한 선수 칸 (11-22 한 선수 행동 하나 — 옛 「사람이 지나간 칸」 자리) · 공이 지나간 칸
+		for (const Player &q : s.players)
+			if (q.placed() && q.team == s.turn_team && q.acted) {
+				const int me = q.uid - s.turn_team * PER_TEAM;
+				if (me >= 0 && me < TEAM_N)
+					add(in, OFF_VIS_P + me * NT + flip_tile(q.pos, team));
+			}
 		for (int i = 0; i < NT; i++) {
 			const V2 t{ i % W, i / W };
-			for (int me = 0; me < TEAM_N; me++)
-				if (vis_has(s.vis_p[s.turn_team * PER_TEAM + me], t))
-					add(in, OFF_VIS_P + me * NT + flip_tile(t, team));
 			if (vis_has(s.vis_b, t))
 				add(in, OFF_VIS_B + flip_tile(t, team));
 		}
+	}
 	for (int r = 0; r < 2; r++) {   // 태세 존 칸 (11-21 방향 존) — 팀마다 겹친 칸은 한 번
 		bool on[NT] = {};
 		for (const Player &q : s.players) {
