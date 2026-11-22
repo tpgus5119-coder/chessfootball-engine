@@ -1160,12 +1160,41 @@ static void pass_targets(const State &s, const Player &p, int rng, Reach &ground
 	}
 }
 
-// 패스 받을 칸 = 동료(나 아님) 칸 — 오프사이드 없음(11-21 사용자). 빈 칸 패스는 뒷공간 패스(A_RUN)로만 (11-21 — 걷어내기 없앰). 공이 이번 차례 있었던 칸 ×
+// 패스 받을 칸 = 동료(나 아님) 칸 — 오프사이드 없음(11-21 사용자). 빈 칸 패스 = 스루패스(through_ok — 11-22 밤). 공이 이번 차례 있었던 칸 ×
+// ---------- 스루패스 (11-22 밤 사용자 「주우러 가는 것도 포인트 · 포인트 1개 남았으면 적 이동 범위 밖 칸만」) ----------
+// 스루패스 = 앞쪽 **빈 칸**으로 차는 패스(1포인트) — 링커만 · 마에스트로는 공중볼(5칸 이상)로만. 공은 그 칸에 루즈볼로 남고,
+// 동료가 이동으로 주워야 내 공이 된다(그것도 포인트 1 · 그 동료의 행동). 칸 조건: 앞쪽 빈 칸 · 박스·골대 아님 · 동료(차는 선수 말고) 하나가 뛰어 닿음 ·
+// **차는 수가 이번 차례 마지막 포인트면 적 누구의 이동 범위에도 들지 않는 칸** (상대가 먼저 줍지 못하게 — 줍는 건 다음 우리 차례)
+static bool through_ok(const State &s, const Player &p, V2 t) {
+	const int dist = manhattan(p.pos, t);
+	if (!(p.position == PASSER || (p.position == MAESTRO && dist >= LONG_PASS_MIN)))
+		return false;
+	if (!in_bounds(t) || player_at(s, t) || is_any_box(t) || is_goal(t) || (t.x - p.pos.x) * forward_dir(p.team) <= 0)
+		return false;
+	bool mate = false;
+	for (const Player &m : s.players)
+		if (m.team == p.team && m.uid != p.uid && m.placed() && manhattan(m.pos, t) <= act_range(s, m, C_MOVE)) {
+			bool blocked[NT];
+			path_blocked(s, m.team, m.uid, false, blocked);
+			if (!best_path(m.pos, t, act_range(s, m, C_MOVE), nullptr, blocked, UNSET).empty()) {
+				mate = true;
+				break;
+			}
+		}
+	if (!mate)
+		return false;
+	if (s.pts <= 1)
+		for (const Player &q : s.players)
+			if (q.team != p.team && q.placed() && manhattan(q.pos, t) <= act_range(s, q, C_MOVE))
+				return false;   // 마지막 포인트 = 적 이동 범위 밖만
+	return true;
+}
+
 static bool pass_dest_ok(const State &s, const Player &p, V2 t) {
 	if (is_any_box(t) || is_goal(t))
 		return false;
 	const Player *r = player_at(s, t);
-	return r && r->team == p.team && r->uid != p.uid;
+	return r ? r->team == p.team && r->uid != p.uid : through_ok(s, p, t);
 }
 
 static bool send_ball(State &s, const Player &p, int val, const std::vector<V2> &path) {   // true = 끊겼다
@@ -1216,79 +1245,26 @@ static bool do_pass(State &s, int uid, V2 dest) {
 		return false;
 	const int team = p.team;
 	const V2 from = p.pos;
-	const int ru = player_at(s, dest)->uid;
+	const Player *rp = player_at(s, dest);
+	const int ru = rp ? rp->uid : -1;   // −1 = 스루패스 (빈 칸 — 루즈볼로 남는다)
 	emit({ 4, uid, -1, dest, pow, aerial ? 1 : 0, 0, path });
 	if (s.ball_owner == -1)
 		set_owner(s, uid);
 	pay_point(s);
 	const bool cut = send_ball(s, p, pow, path);
-	if (!cut) {
+	if (!cut && ru >= 0) {
 		set_owner(s, ru);
 		s.hold = pow;   // 받은 선수 버티는 힘 = 그 패스의 판정 힘 (11-22 사용자 「패스 받은 상태는 그 패스 값」 — 멀리서 온 공은 약하게 받음)
 		pass_jokbo(s, uid, ru, from, dest);
+	} else if (!cut) {   // 스루패스 — 그 칸에 루즈볼 (우리 공 차례는 이어진다 · 줍는 건 이동)
+		for (Player &q : s.players)
+			q.charge = 0;
+		s.ball_owner = -1;
+		s.ball_pos = dest;
+		s.loose_team = team;
+		s.hold = 0;
 	}
 	if (s.ball_team() == team && (dest.x - from.x) * forward_dir(team) > 0)
-		rep_add(s, uid, MAESTRO);
-	after_action(s, team);
-	return true;
-}
-
-// ---------- 스루패스 = 최후방 뒷공간 (11-21 사용자 4차 — 누구나 · 키퍼는 빈 칸 킥 없음 · 오프사이드 없음) ----------
-// 빈 칸 패스 = 스루패스: 차는 선수 킥 범위 안 · **앞쪽**(차는 자리보다 상대 골대 쪽) 빈 칸 · 받을 동료의 이동 범위 안 — 셋뿐.
-// 받을 동료를 정해 그 동료가 같이 뛰어가 받는다 (1포인트 한 수). 뛰는 길은 공 없는 이동(경합 없음 · 몸 통과 · 지나간 칸 규칙 그대로).
-// 공 길은 보통 패스와 같다 (땅볼 존 경합 · 공중볼 떨어지는 칸 경합). 키퍼 킥 빈 칸도 같은 규칙(차는 자리 = 우리 골대)
-// 빈 칸 패스 칸 (11-22 사용자): 앞쪽 빈 칸이고 받을 동료가 그 칸까지 뛸 수 있으면(mate_ok) — 옛 「상대 최후방보다 뒤」 조건 없앰
-static bool run_dest_ok(const State &s, int team, int kx, V2 t) {
-	return in_bounds(t) && !player_at(s, t) && !is_any_box(t) && !is_goal(t) && (t.x - kx) * forward_dir(team) > 0;
-}
-
-static std::vector<V2> mate_run(const State &s, int mate, V2 dest) {
-	const Player &m = s.players[mate];
-	bool blocked[NT];
-	path_blocked(s, m.team, mate, false, blocked);
-	return best_path(m.pos, dest, act_range(s, m, C_MOVE), nullptr, blocked, UNSET);
-}
-
-// 받을 동료가 되나: kicker = 차는 선수 (−1 = 키퍼) · 이동 범위 안 · 뛰어갈 길이 있음
-static bool mate_ok(const State &s, int team, int kicker, int mate, V2 dest) {
-	if (mate < 0 || mate >= PLAYERS || mate == kicker)
-		return false;
-	const Player &m = s.players[mate];
-	if (m.team != team || !m.placed() || manhattan(m.pos, dest) > act_range(s, m, C_MOVE))
-		return false;
-	return !mate_run(s, mate, dest).empty();
-}
-
-// 동료가 뛰어간다 (공보다 먼저 그 칸에 선다 — 공은 그 동료에게 가는 패스)
-static void run_to(State &s, int mate, V2 dest) {
-	const std::vector<V2> run = mate_run(s, mate, dest);
-	emit({ 4, mate, -1, dest, 0, 0, 0, run });
-	s.players[mate].pos = dest;
-}
-
-static bool do_run(State &s, int uid, V2 dest, int mate) {
-	const Player &p = s.players[uid];
-	const int dist = manhattan(p.pos, dest);
-	if (!can_act(s, p) || !may_carry(s, p) || !(p.position == PASSER || (p.position == MAESTRO && dist >= LONG_PASS_MIN)) || !run_dest_ok(s, p.team, p.pos.x, dest) || !mate_ok(s, p.team, uid, mate, dest))
-		return false;   // 스루패스 = 패서만 · 마에스트로는 공중볼로만 (11-22)
-	const int pow = act_power(s, p, U_PASS, dist);
-	std::vector<V2> path = kick_path(s, p, dest, pow);
-	if (path.empty())
-		return false;
-	const int team = p.team;
-	const V2 from = p.pos;
-	if (s.ball_owner == -1)
-		set_owner(s, uid);
-	pay_point(s);
-	run_to(s, mate, dest);
-	emit({ 4, uid, -1, dest, pow, dist >= LONG_PASS_MIN ? 1 : 0, 0, path });
-	const bool cut = send_ball(s, p, pow, path);
-	if (!cut) {
-		set_owner(s, mate);
-		s.hold = pow;   // 뒷공간 패스를 받은 동료 = 그 패스 힘 (11-22)
-		pass_jokbo(s, uid, mate, from, dest);
-	}
-	if (s.ball_team() == team)
 		rep_add(s, uid, MAESTRO);
 	after_action(s, team);
 	return true;
@@ -1519,7 +1495,6 @@ static bool apply_one(State &s, const Action &a) {
 		case A_MOVE: return u && s.players[a.uid].charge == 0 && do_move(s, a.uid, a.dest);   // 이동은 「강하게」 없음
 		case A_DRIBBLE: return u && spend_charge(s, a.uid, do_dribble(s, a.uid, a.dest));
 		case A_PASS: return u && spend_charge(s, a.uid, do_pass(s, a.uid, a.dest));
-		case A_RUN: return u && spend_charge(s, a.uid, do_run(s, a.uid, a.dest, a.mate));
 		case A_SHOT: return u && spend_charge(s, a.uid, do_shot(s, a.uid));
 		case A_STANCE: return u && (s.ball_owner == a.uid ? do_stance(s, a.uid, a.dest) : spend_charge(s, a.uid, do_stance(s, a.uid, a.dest)));
 		case A_SAVE: return u && s.ball_owner != a.uid && do_charge(s, a.uid, a.dest);   // 공 없는 선수 「강하게」 (옛 키퍼 킥 번호)
@@ -1595,16 +1570,8 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 						continue;
 					if (dist > kr)
 						continue;
-					if (pass_dest_ok(s, q, t)) {
+					if (pass_dest_ok(s, q, t))   // 동료 칸 · 스루패스(빈 칸 — through_ok)
 						out.push_back({ A_PASS, u, t, -1, sk });
-					} else if (!sk && (q.position == PASSER || (q.position == MAESTRO && dist >= LONG_PASS_MIN)) && run_dest_ok(s, team, q.pos.x, t)) {   // 스루패스(빈 칸 패스 = 앞쪽 빈 칸 + 받을 동료가 닿음) = 패서만 · 마에스트로는 공중볼로만 (11-22 사용자)
-						for (int m = team * PER_TEAM; m < (team + 1) * PER_TEAM; m++)
-							if (mate_ok(s, team, u, m, t)) {
-								Action a{ A_RUN, u, t, -1 };
-								a.mate = m;
-								out.push_back(a);
-							}
-					}
 				}
 			}
 			if (!ko && s.ball_owner == u) {
