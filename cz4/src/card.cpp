@@ -242,7 +242,7 @@ static void sync_roles(State &s) {
 		s.role[t] = t == bt ? R_ATK : R_DEF;
 }
 
-bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 이동만 (킥·태세 ×)
+bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 이동·드리블 × (킥·태세는 됨, 11-22 사용자 「잡히면 못 움직여야」)
 	if (!p.placed())
 		return false;
 	for (const Player &m : s.players)
@@ -1070,7 +1070,7 @@ static void move_blocked(const State &s, const Player &p, bool blocked[NT]) {
 
 static bool do_move(State &s, int uid, V2 dest) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || kickoff_turn(s) || s.ball_owner == uid || !move_dest_ok(s, p, dest) || (g_stance_lock && p.stance > 0))
+	if (!can_act(s, p) || kickoff_turn(s) || s.ball_owner == uid || !move_dest_ok(s, p, dest) || (g_stance_lock && p.stance > 0) || marked(s, p))
 		return false;
 	bool blocked[NT];
 	move_blocked(s, p, blocked);
@@ -1123,7 +1123,7 @@ static bool do_move(State &s, int uid, V2 dest) {
 
 static bool do_dribble(State &s, int uid, V2 dest) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || !may_carry(s, p) || player_at(s, dest) || is_any_box(dest) || is_goal(dest))
+	if (!can_act(s, p) || !may_carry(s, p) || player_at(s, dest) || is_any_box(dest) || is_goal(dest) || marked(s, p))
 		return false;
 	int zone[NT];
 	build_zone(s, opponent(p.team), zone);
@@ -1218,7 +1218,7 @@ static std::vector<V2> kick_path(const State &s, const Player &p, V2 dest, int p
 
 static bool do_pass(State &s, int uid, V2 dest) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || !may_carry(s, p) || marked(s, p) || !pass_dest_ok(s, p, dest))
+	if (!can_act(s, p) || !may_carry(s, p) || !pass_dest_ok(s, p, dest))
 		return false;
 	const int dist = manhattan(p.pos, dest);
 	const bool aerial = dist >= LONG_PASS_MIN;
@@ -1298,7 +1298,7 @@ static void run_to(State &s, int mate, V2 dest) {
 
 static bool do_run(State &s, int uid, V2 dest, int mate) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || !may_carry(s, p) || marked(s, p) || !run_kicker_ok(s, p, dest) || !run_dest_ok(s, p.team, p.pos.x, dest) || !mate_ok(s, p.team, uid, mate, dest))
+	if (!can_act(s, p) || !may_carry(s, p) || !run_kicker_ok(s, p, dest) || !run_dest_ok(s, p.team, p.pos.x, dest) || !mate_ok(s, p.team, uid, mate, dest))
 		return false;
 	const int dist = manhattan(p.pos, dest);
 	const int pow = act_power(s, p, U_PASS, dist);
@@ -1326,7 +1326,7 @@ static bool do_run(State &s, int uid, V2 dest, int mate) {
 
 static bool do_shot(State &s, int uid) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || s.ball_owner != uid || marked(s, p))
+	if (!can_act(s, p) || s.ball_owner != uid)
 		return false;
 	const V2 goal = opponent_goal(p.team);
 	const int rng = act_range(s, p, C_KICK);
@@ -1357,7 +1357,7 @@ static bool do_shot(State &s, int uid) {
 }
 
 static bool can_stance(const State &s, const Player &p) {
-	return can_act(s, p) && s.ball_owner != p.uid && !kickoff_turn(s) && p.stance == 0 && !is_any_box(p.pos) && !marked(s, p);
+	return can_act(s, p) && s.ball_owner != p.uid && !kickoff_turn(s) && p.stance == 0 && !is_any_box(p.pos);
 }
 
 // 공격 태세 (11-22 사용자 C안): 공 임자가 제자리 「디펜스」를 누름 — 1포인트, 다음 우리 차례에 발동 (상대가 그 사이 대처할 기회)
@@ -1566,8 +1566,8 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 		const bool do_mv = !skl || skill_act(q.position, A_MOVE, sk), do_kk = !skl || skill_act(q.position, A_PASS, sk), do_df = !skl || skill_act(q.position, A_STANCE, sk);
 		const int u = q.uid;
 		const bool carry = may_carry(s, q);
-		const bool mk = marked(s, q);   // 마커 곁 = 이동만
-		if (do_mv) {
+		const bool mk = marked(s, q);   // 마커 곁 = 이동·드리블 × (11-22)
+		if (do_mv && !mk) {
 			const int mr = std::max(1, act_range(s, q, C_MOVE, sk) - (carry ? g_drib_short : 0));   // 드리블 범위 = 이동 범위 − 1 (11-21 규칙)
 			bool blocked[NT];   // 그 선수의 벽 — 적의 몸 · 이번 차례 그 선수(드리블이면 공도)가 있었던 칸
 			if (carry)
@@ -1592,7 +1592,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 				out.push_back({ carry ? A_DRIBBLE : A_MOVE, u, t, -1, sk });
 			}
 		}
-		if (carry && do_kk && !mk) {   // 패스 · 뒷공간 패스 · 슛
+		if (carry && do_kk) {   // 패스 · 뒷공간 패스 · 슛
 			const int kr = act_range(s, q, C_KICK, sk);
 			Reach g, air;
 			pass_targets(s, q, kr, g, air);
