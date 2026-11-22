@@ -161,6 +161,7 @@ Dictionary CardNative::get_state() const {
 		q["uid"] = p.uid;
 		q["team"] = p.team;
 		q["position"] = p.position;
+		q["charge"] = p.charge;   // 「강하게」 모음 2 (11-22 셋째)
 		q["bonus"] = Array::make(p.bonus[0], p.bonus[1], p.bonus[2], p.bonus[3]);   // 컵 선수 스탯 슛·패스·드리블·수비
 		q["pos"] = Vector2i(p.pos.x, p.pos.y);
 		q["placed_order"] = p.placed_order;
@@ -433,6 +434,7 @@ void CardNative::dev_set(int uid, int x, int y, int stance) {
 	s.players[uid].stance_left = stance > 0 ? 1 : 0;
 	s.players[uid].jk_up = 0;   // 개발용 놓기 — 앞 국면의 족보 토큰은 지운다
 	s.players[uid].acted = 0;   // 앞 국면의 「행동함」(11-22 한 선수 행동 하나)·「강하게」도
+	s.players[uid].charge = 0;
 	s.players[uid].zdir = ck::ZD_ALL;   // 개발용 — 사방 존
 }
 

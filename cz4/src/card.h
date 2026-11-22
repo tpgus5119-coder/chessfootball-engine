@@ -50,6 +50,7 @@ struct Player {
 	int stance = 0;        // 수비 태세의 힘 — 0 = 태세 없음
 	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 · 월은 2 — 11-21 사용자 「월 2턴 4방 존」)
 	int acted = 0;         // 이번 차례에 행동함 (11-22 사용자 「한 선수는 한 차례에 행동 하나」) — 우리 차례 시작에 0 · 「강하게」 모으기는 안 셈
+	int charge = 0;        // 「강하게」 (11-22 셋째 — 사용자 「2액포 = 힘 +1 · 패스·슛·드리블·디펜스, 이동은 없음」): 2 = 이번 차례 다음 패스·슛·드리블·디펜스 1번이 힘 +1 — 포인트 2개짜리 행동의 앞 반 · 쓰거나 공을 잃거나 차례가 끝나면 0
 	int jk_up = 0;         // 족보 +1 토큰 (11-21 사용자): 1 이면 모든 판정 힘 +1 (겹치지 않음) · 우리 다음 차례 시작에 없어짐
 	int zdir = -1;         // 존 방향 (11-21 사용자): DIRS 번호 0~3 = 곁 한 칸 · ZD_ALL = 사방 4칸(월). stance 0 이면 뜻 없음
 	int bonus[4] = { 0, 0, 0, 0 };   // 스탯업 — 슛·패스(= 킥)·드리블(= 이동)·수비
@@ -156,8 +157,8 @@ constexpr int SLOT_PROSPECT = CARD_POOL_N;
 void set_lineup(State &s, int team, const int position[PER_TEAM], const int bonus[PER_TEAM][4]);
 int eff_hold(const State &s);
 void set_perks(State &s, int team, const int range_up[PER_TEAM], const int hold_up[PER_TEAM], const int kick_range_up[PER_TEAM] = nullptr);
-// 성장 길 (11-22 사용자): 전직이 주 능력 줄의 첫 칸 → 주 능력 +2 를 먼저 채운 뒤 나머지 스탯 +1씩 (모두 GROW_N 번). 타이탄·마커 = 아무 스탯 (스탯마다 +3).
-// 마에스트로 주 능력 = 패스 범위(킥 못 키움) · 스프린터 = 무브 범위(무브 못 키움). st[4] = 킥 · 무브 · 디펜스 · 범위 — core/career.gd _stat_ok 와 같다
+// 성장 길 (11-22 사용자 넷째): 전직이 주 능력 줄의 첫 칸 → 주 능력 +1 을 먼저 채운 뒤 나머지 스탯 +1씩 (모두 GROW_N 번 안). 타이탄·마커 = 아무 스탯 (스탯마다 +3).
+// 마에스트로 주 능력 = 패스 범위(킥 못 키움) · 스프린터 = 무브 범위(무브 못 키움) · 월 = 존 지속(11-22 셋째). st[4] = 킥 · 무브 · 디펜스 · 특수 — core/career.gd _stat_ok 와 같다
 constexpr int GROW_N = 4;
 bool grow_ok(int pos, const int st[4], int k);
 enum StatKind { ST_SHOT = 0, ST_PASS = 1, ST_DRIBBLE = 2, ST_DEF = 3 };

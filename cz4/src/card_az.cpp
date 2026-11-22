@@ -56,6 +56,10 @@ void net_input(const State &s, int team, NetInput &in) {
 			add(in, OFF_PERK + (rel * 2 + 0) * NT + tile);
 		if (q.kick_range_up > 0)
 			add(in, OFF_PERK + (rel * 2 + 1) * NT + tile);
+		if (q.hold_up > 0)
+			add(in, OFF_BOOSTED + rel * NT + tile);   // 월 지속 성장 (11-22 셋째 — 옛 부스터 빈 칸)
+		if (q.charge)
+			add(in, OFF_LASTPASS + (2 + rel) * NT + tile);   // 「강하게」 모음 (11-22 셋째 — 옛 빈 칸 뒤 140칸)
 		if (q.position == ALLROUND)
 			add(in, OFF_ALLROUND + rel * NT + tile);
 		// OFF_LASTPASS 앞 140 = 월 2차례 · 뒤 140 = 공격 태세(11-22) · OFF_FWDMOVED = 족보 토큰(족보 끔 — 늘 0)
@@ -170,6 +174,10 @@ int action_index(const State &s, const Action &a) {
 			if (a.uid < 0 || a.uid > POOL_N || !in_bounds(a.dest))
 				return -1;
 			return OFF_PLACE + a.uid * NT + flip_tile(a.dest, team);
+		case A_SAVE:   // 공 없는 선수 「강하게」 모으기 — 옛 키퍼 킥 칸 OFF_SAVE + 자기 칸
+			if (!in_bounds(a.dest))
+				return -1;
+			return OFF_SAVE + flip_tile(a.dest, team);
 		default:
 			return -1;
 	}
@@ -879,7 +887,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	// 만능은 뺌 (11-20 사용자 「만능은 없고, 각 직업 4명씩」 — 옛 만능 에이스는 직업을 받음)
 	constexpr int JOBS_N = 10;   // 11-22 직업 10개 (중거리 슈터·패서 = 옛 부스터·노마드 자리)
 	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, LONGSHOT, PASSER };
-	int pos[PER_TEAM], bonus[PER_TEAM][4] = {}, rng_up[PER_TEAM] = {}, krng_up[PER_TEAM] = {}, hold0[PER_TEAM] = {};
+	int pos[PER_TEAM], bonus[PER_TEAM][4] = {}, rng_up[PER_TEAM] = {}, krng_up[PER_TEAM] = {}, hold_up[PER_TEAM] = {};
 	int used = 0;
 	const int prospects = int(next() % (PER_TEAM + 1));   // 유망주 0~5명
 	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 스탯 합 0 ~ 3 × level
@@ -910,13 +918,13 @@ void random_lineup(State &s, int team, unsigned long long r) {
 				st[ok[next() % m]]++;
 			}
 		}
-		(pos[i] == MAESTRO ? krng_up : rng_up)[i] = st[3];
+		(pos[i] == MAESTRO ? krng_up : pos[i] == WALL ? hold_up : rng_up)[i] = st[3];
 		bonus[i][ST_SHOT] = bonus[i][ST_PASS] = st[0];
 		bonus[i][ST_DRIBBLE] = st[1];
 		bonus[i][ST_DEF] = st[2];
 	}
 	set_lineup(s, team, pos, bonus);
-	set_perks(s, team, rng_up, hold0, krng_up);
+	set_perks(s, team, rng_up, hold_up, krng_up);
 }
 
 // 일기토 수 하나를 기록으로 (자가대전 — 망이 일기토 판단도 배우게). 정책 = duel::ai_act가 숨은 경우들을 더한 것
