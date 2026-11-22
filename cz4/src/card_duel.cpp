@@ -39,7 +39,6 @@ static void begin_attack(Duel &d, int team) {
 		s.goals[t] = 0;
 	}
 	turn_clear(s);   // 지나간 칸·족보 (11-21)
-	vis_add(s.vis_b, s.players[atk].pos);
 	s.half = 2;                    // 골이 나면 그 판은 끝(full_time) — 전반 판에서 열려도 다섯 명이 되살아나지 않게
 	s.half_start = s.turn_count;   // 반 시계가 끼어들지 않게
 	d.s = s;

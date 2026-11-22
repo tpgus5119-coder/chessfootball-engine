@@ -62,18 +62,13 @@ void net_input(const State &s, int team, NetInput &in) {
 			add(in, OFF_ALLROUND + rel * NT + tile);
 		// OFF_LASTPASS 앞 140 = 월 2차례 · 뒤 140 = 공격 태세(11-22) · OFF_FWDMOVED = 족보 토큰(족보 끔 — 늘 0)
 	}
-	if (s.phase == PLAY && s.turn_team >= 0) {   // 두는 팀: 이번 차례에 행동한 선수 칸 (11-22 한 선수 행동 하나 — 옛 「사람이 지나간 칸」 자리) · 공이 지나간 칸
+	if (s.phase == PLAY && s.turn_team >= 0) {   // 두는 팀: 이번 차례에 행동한 선수 칸 (11-22 한 선수 행동 하나 — 옛 「사람이 지나간 칸」 자리) · OFF_VIS_B(옛 공 지나간 칸)는 11-22 부터 늘 0
 		for (const Player &q : s.players)
 			if (q.placed() && q.team == s.turn_team && q.acted) {
 				const int me = q.uid - s.turn_team * PER_TEAM;
 				if (me >= 0 && me < TEAM_N)
 					add(in, OFF_VIS_P + me * NT + flip_tile(q.pos, team));
 			}
-		for (int i = 0; i < NT; i++) {
-			const V2 t{ i % W, i / W };
-			if (vis_has(s.vis_b, t))
-				add(in, OFF_VIS_B + flip_tile(t, team));
-		}
 	}
 	for (int r = 0; r < 2; r++) {   // 태세 존 칸 (11-21 방향 존) — 팀마다 겹친 칸은 한 번
 		bool on[NT] = {};
@@ -177,6 +172,10 @@ int action_index(const State &s, const Action &a) {
 			if (a.uid < 0 || a.uid > POOL_N || !in_bounds(a.dest))
 				return -1;
 			return OFF_PLACE + a.uid * NT + flip_tile(a.dest, team);
+		case A_SAVE:   // 공 없는 선수 「강하게」 (11-22) — 옛 키퍼 킥 칸 OFF_SAVE + 자기 칸
+			if (!in_bounds(a.dest))
+				return -1;
+			return OFF_SAVE + flip_tile(a.dest, team);
 		default:
 			return -1;
 	}

@@ -8,15 +8,7 @@ inline cf::V2 v(cf::V2 p) {
 		p.y = cf::H - 1 - p.y;
 	return p;
 }
-inline void mask(uint64_t m[2]) {   // 지나간 칸 비트 (11-21)
-	uint64_t o[2] = { 0, 0 };
-	for (int i = 0; i < cf::NT; i++)
-		if ((m[i >> 6] >> (i & 63)) & 1)
-			cf::card::vis_add(o, v(cf::V2{ i % cf::W, i / cf::W }));
-	m[0] = o[0], m[1] = o[1];
-}
 inline void state(cf::card::State &s) {
-	mask(s.vis_b);
 	s.ball_pos = v(s.ball_pos);
 	for (int i = 0; i < cf::PLAYERS; i++) {
 		s.half_pos[i] = v(s.half_pos[i]);

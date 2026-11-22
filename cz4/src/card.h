@@ -25,7 +25,7 @@ constexpr int CARD_POOL_N = 10;
 constexpr int TEAM_N = 4;   // 4대4 (11-19) — 팀마다 uid 0~3 · 5~8 만 판에 선다 (PER_TEAM 5 는 배열 자리)
 
 // 선수 기준 수치 (11-19 사용자 · 11-21 이동 3): 킥 3 · 수비 3 · 이동 3 — 여기에 스탯업(bonus)·직업·족보 보정을 더한다
-constexpr int BASE_KICK = 3, BASE_DEF = 3, BASE_MOVE = 3;   // 이동 3 (11-21 사용자 — 옛 2)
+constexpr int BASE_KICK = 4, BASE_DEF = 3, BASE_MOVE = 3;   // 11-22 사용자 「계산식 하나 · 범위 = 능력치」: 힘 = 능력치 + 1 − 거리 · 킥 4 (옛 「3 + 2 − 거리」와 같은 값)
 constexpr int KICK_RANGE = 4;     // 킥 범위 상한 (범위 보너스만큼 늘어남)
 
 // 축구 족보 6개 (11-21 사용자 — 두 팀 모두, 옛 9개 없앰). 모두 그 한 수에서 바로 판정 · 혜택 = 걸린 순간 행동 포인트 +1 · 같은 족보는 한 차례에 한 번.
@@ -37,7 +37,7 @@ extern int g_zone4;   // 1 = 모든 선수 4방 존 (규칙) · 0 = 곁 한 칸 
 constexpr int JK_NEAR = 2;   // 지원·삼각 패스의 「2칸 안」(맨해튼)
 constexpr int JK_AHEAD = 3;  // 전진 패스·돌파의 「3칸 이상 앞」
 
-// A_SAVE = 옛 키퍼 킥 (11-22 없앰 — 골 뒤 = 킥오프, 번호 자리만) · A_RUN = 뒷공간 패스(빈 칸 + 받을 동료 mate 가 같이 뛰어감, 11-21) · 6·7 = 빈 번호(옛 차례 끝·전술)
+// A_SAVE = 공 없는 선수 「강하게」(11-22 — 옛 키퍼 킥 번호 자리, dest = 자기 칸) · A_RUN = 뒷공간 패스(빈 칸 + 받을 동료 mate 가 같이 뛰어감, 11-21) · 6·7 = 빈 번호(옛 차례 끝·전술)
 enum Act { A_MOVE = 0, A_DRIBBLE, A_PASS, A_SHOT, A_STANCE, A_PLACE, A_FREE6, A_FREE7, A_SAVE, A_RUN };
 
 struct Player {
@@ -84,9 +84,7 @@ struct State {
 	int jk_turn[2] = { 0, 0 };
 	int jk_next[2] = { 0, 0 };
 	int jk_count[2][N_JK] = {};
-	// 되돌아가기 금지 (11-21): 이번 차례에 공이 있었던 칸 — 칸 번호 idx 비트 (70칸 → 2×64) · 사람 쪽은 11-22 「한 선수 행동 하나」로 필요 없어 없앰
-	uint64_t vis_b[2] = {};
-	Player players[PLAYERS];
+		Player players[PLAYERS];
 	// 직업 능력은 모두 상시 (11-19 사용자 둘째 결정 — 게이지·켜기 없음). sk_uid·sk_kind 는 옛 「켠 수」 자리 (늘 −1·0)
 	int sk_uid = -1;
 	int sk_kind = 0;
@@ -147,8 +145,6 @@ bool value_path(const State &s, const Action &a, PathValue val, const void *ctx,
 int assist_value(const State &s, int team);
 bool jk_enabled(const State &s, int team, int k);   // 그 팀에 그 족보가 걸릴 수 있나 — 지금은 표의 on (팀마다 달라지면 여기 한 곳)
 inline int jokbo_mask(const State &s, int team) { return s.turn_team == team ? s.jk_turn[team] : s.jk_next[team]; }   // 그 팀 지금(다음) 차례에 이미 걸린 족보
-inline bool vis_has(const uint64_t m[2], V2 t) { const int i = t.y * W + t.x; return in_bounds(t) && ((m[i >> 6] >> (i & 63)) & 1); }
-inline void vis_add(uint64_t m[2], V2 t) { if (in_bounds(t)) { const int i = t.y * W + t.x; m[i >> 6] |= 1ull << (i & 63); } }
 void turn_clear(State &s);   // 이번 차례 기록(지나간 칸·족보)을 새로 — 차례 시작·일기토 판
 void end_turn(State &s);
 bool marked(const State &s, const Player &p);
