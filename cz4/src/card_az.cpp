@@ -231,7 +231,7 @@ bool Net::load_mem(const unsigned char *p, size_t n) {
 		return true;
 	};
 	int head[7];
-	if (!take(head, sizeof(head)) || head[0] != MAGIC || (head[1] != 1 && head[1] != 2) || head[2] != SPARSE || head[3] != DENSE ||
+	if (!take(head, sizeof(head)) || head[0] != MAGIC || head[1] < 1 || head[1] > 3 || head[2] != SPARSE || head[3] != DENSE ||
 			head[4] <= 0 || head[4] > 2048 || head[5] <= 0 || head[5] > 512 || head[6] != NA)
 		return false;
 	h1 = head[4];
@@ -246,7 +246,8 @@ bool Net::load_mem(const unsigned char *p, size_t n) {
 	wp.resize(size_t(h2) * na);
 	bp.resize(na);
 	// 판 2 = 무게를 16비트 반정밀도로 (앱 용량 절반 — tools/cz/net_fp16.py, 2026-10-30 사용자 "용량 줄이고 최적화"). 읽으면서 32비트로 푼다
-	const bool half = head[1] == 2;
+	// 판 3 = 첫 층 w1 만 int8 (64칸 묶음마다 fp16 scale) + 나머지 판 2 와 같음 (게임 전용 ≈19.6MB — tools/net_q8/net_q8.py, 11-22)
+	const bool half = head[1] >= 2;
 	auto takef = [&](float *dst, size_t cnt) {
 		if (!half)
 			return take(dst, 4 * cnt);
@@ -256,7 +257,23 @@ bool Net::load_mem(const unsigned char *p, size_t n) {
 			dst[i] = half_to_float(uint16_t(p[at] | (p[at + 1] << 8)));
 		return true;
 	};
-	bool ok = takef(w1.data(), size_t(SPARSE + DENSE) * h1) &&
+	auto take_q8 = [&](float *dst, size_t rows, int cols) {   // 판 3 w1: scale fp16 [rows × cols/64] 다음 값 int8 [rows × cols]
+		constexpr int G = 64;
+		if (cols % G != 0)
+			return false;
+		const size_t ng = rows * size_t(cols / G);
+		if (at + 2 * ng + rows * size_t(cols) > n)
+			return false;
+		const unsigned char *sc = p + at, *q = p + at + 2 * ng;
+		for (size_t g = 0; g < ng; g++) {
+			const float k = half_to_float(uint16_t(sc[2 * g] | (sc[2 * g + 1] << 8)));
+			for (int j = 0; j < G; j++)
+				dst[g * G + j] = k * float(int8_t(q[g * G + j]));
+		}
+		at += 2 * ng + rows * size_t(cols);
+		return true;
+	};
+	bool ok = (head[1] == 3 ? take_q8(w1.data(), size_t(SPARSE + DENSE), h1) : takef(w1.data(), size_t(SPARSE + DENSE) * h1)) &&
 			takef(b1.data(), b1.size()) && takef(w2.data(), w2.size()) &&
 			takef(b2.data(), b2.size()) && takef(wv.data(), wv.size()) && takef(&bv, 1) &&
 			takef(wa.data(), wa.size()) && takef(&ba, 1) && takef(wp.data(), wp.size()) &&
