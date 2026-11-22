@@ -1,5 +1,5 @@
 // 전술 대본 3판 (11-22 사용자 「막대는 유저가 직접 조절한다고 상상 — 중복·우리 게임에 없는 것은 없애고 단순하게」)
-// 설계 = docs/전술_대본_2026-11-22.md — 막대 13개(공 가진 선수 4 · 공 없는 선수 4 · 달려드는 선수 2 · 자리 지키는 선수 3 — 5판 단계 하·중·상) · 국면(지공·역습·역압박·수비) · 직업 역할표.
+// 설계 = docs/전술_대본_2026-11-22.md — 막대 13개(공 가진 선수 4 · 공 없는 선수 4 · 달려드는 선수 2 · 자리 지키는 선수 3 — 5판, 전술끼리 3 이상 벌어짐) · 국면(지공·역습·역압박·수비) · 직업 역할표.
 // 규칙은 하나도 바꾸지 않는다(AI 버릇만). card_az.cpp search() 뿌리가 g_tac_score 로 부른다:
 // 대본 점수가 높은 수 넷은 꼭 탐색 · 값이 최선 − ε 안인 수 중 점수가 가장 높은 수를 둔다 · 이기는 쪽 슛은 가로채지 않는다(보이면 슛).
 #include <algorithm>
@@ -15,17 +15,19 @@ namespace az {
 
 namespace {
 
-// ---------- 막대 기본값 (문서 3절 5판 — 번호 1~13, 값 = 단계 0 하 · 1 중 · 2 상) ----------
-// 사용자 11-22 「공 있을 때 공 있는 선수·공 없는 선수, 공 없을 때도 따로 나눠 세분화」 「모든 수치가 상중하로 뚜렷하게 · 남는 수비 0·1·2 명확히 · 공격 태세 없애」
-// — 막대마다 세 전술이 하·중·상을 하나씩 가진다(겹침 없음). 엔진 식은 옛 0~10 눈금 그대로: 단계 × 5 (하 0 · 중 5 · 상 10)
-// 공 가진 선수   1 패스↔드리블(하 드리블 · 상 늘 패스)  2 앞뒤(하 옆·뒤로 돌림 · 상 늘 앞으로)  3 중앙·측면(하 가운데 · 상 측면)  4 길이(하 짧게 · 상 길게)
-// 공 없는 선수   5 받으러↔침투(하 받으러 옴 · 상 앞으로 침투)  6 움직이는 방향(하 가운데 · 상 측면)  7 받으러 갈 거리(하 1칸 · 중 2칸 · 상 3칸)  8 남는 수비(0·1·2명)
-// 달려드는 선수 9 인원(0·1·2명, 막 뺏기면 +1 — 역압박)  10 태클 세기(하 따라만 감 · 상 붙어서 태클·「강하게」 다가가기)
-// 자리 지키는 선수 11 수비 라인(하 우리 골대 앞 · 상 상대 진영)  12 마크(하 지역 · 상 사람)  13 존 세우기(하 공 쪽으로 끌려감 · 상 제자리에서 존 세워 인터셉트)
+// ---------- 막대 기본값 (문서 3절 5판 — 번호 1~13) ----------
+// 사용자 11-22 「공 있을 때 공 있는 선수·공 없는 선수, 공 없을 때도 따로 나눠 세분화」 「상중하 말고 숫자로 · 전술끼리 분명히 나뉘게 · 남는 수비 0·1·2 명확히 · 공격 태세 없애」
+// — 값 0~10, 막대마다 세 전술이 3 이상 벌어진다(높은·가운데·낮은 쪽을 하나씩). 7·8·9 는 수 그대로(칸·명).
+// 공 가진 선수   1 패스↔드리블(0 드리블 · 10 늘 패스)  2 앞뒤(0 옆·뒤로 돌림 · 10 늘 앞으로)  3 중앙·측면(0 가운데 · 10 측면)  4 길이(0 짧게 1칸 · 10 길게 5칸)
+// 공 없는 선수   5 받으러↔침투(0 받으러 옴 · 10 앞으로 침투)  6 움직이는 방향(0 가운데 · 10 측면)  7 받으러 갈 거리(1·2·3칸)  8 남는 수비(0·1·2명)
+// 달려드는 선수 9 인원(0·1·2명, 막 뺏기면 +1 — 역압박)  10 태클 세기(0 따라만 감 · 10 붙어서 태클·「강하게」 다가가기)
+// 자리 지키는 선수 11 수비 라인(0 우리 골대 앞 · 10 상대 진영)  12 마크(0 지역 · 10 사람)  13 존 세우기(0 공 쪽으로 끌려감 · 10 제자리에서 존 세워 인터셉트)
 //                      1  2  3  4  5  6  7  8  9 10 11 12 13
-float SL[TAC_N][SL_N] = { { 1, 2, 0, 1, 2, 0, 1, 0, 2, 2, 2, 1, 0 },    // 게겐프레싱 — 앞으로·침투·가운데로 · 남는 수비 0 · 많이 달려들어 세게 · 높은 라인
-                          { 2, 0, 2, 0, 0, 2, 0, 1, 1, 1, 1, 0, 1 },    // 티키타카 — 늘 패스·옆뒤로·측면 벌림·짧게 · 1칸 곁으로 받으러 옴 · 지역
-                          { 0, 1, 1, 2, 1, 1, 2, 2, 0, 0, 0, 2, 2 } };  // 카테나치오 — 드리블 운반·길게 · 멀리서 받음 · 남는 수비 2 · 내려앉아 제자리 존 · 사람 마크
+float SL[TAC_N][SL_N] = { { 5, 9, 2, 5, 8, 2, 2, 0, 2, 9, 8, 5, 2 },    // 게겐프레싱 — 앞으로·침투·가운데로 · 남는 수비 0 · 둘이 달려들어 세게 · 높은 라인
+                          { 9, 3, 8, 2, 2, 8, 1, 1, 1, 5, 5, 2, 5 },    // 티키타카 — 늘 패스·옆뒤로·측면 벌림·짧게 · 1칸 곁으로 받으러 옴 · 지역
+                          { 2, 6, 5, 8, 5, 5, 3, 2, 0, 2, 1, 8, 8 } };  // 카테나치오 — 드리블 운반·길게 · 3칸 멀리서 받음 · 남는 수비 2 · 내려앉아 제자리 존 · 사람 마크
+constexpr float SL_LO[SL_N] = { 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0 };    // 막대마다 범위 (7 = 칸 · 8·9 = 명)
+constexpr float SL_HI[SL_N] = { 10, 10, 10, 10, 10, 10, 3, 2, 2, 10, 10, 10, 10 };
 enum { PASS, FWD, WIDE, LEN, RUN, RWIDE, RDIST, REST, PRESS, TACKLE, LINE, MARK, ZONE };
 constexpr float EPS = 0.06f;   // 허용 폭 (유저 막대 아님)
 
@@ -216,11 +218,11 @@ float runner(const State &s, const Sit &x, const float *S, int tac, const Player
 	const Role &me = role_of(tac, p);
 	const V2 h = s.players[s.ball_owner].pos;
 	const int dd = depth(x.team, a.dest), gain = dd - depth(x.team, p.pos);
-	const int dist = 1 + int(std::lround(S[RDIST] / 5.0f));   // 7 받으러 갈 거리 1·2·3칸
+	const int dist = int(S[RDIST]);   // 7 받으러 갈 거리 1·2·3칸
 	float b = (10.0f - S[RUN]) * 0.3f * support_rank(x.team, h, a.dest, dist) * (foes_next(s, x.team, a.dest) == 0 ? 1.0f : 0.5f);
 	b += (S[RUN] * 0.05f + ((me.f & R_RUN) ? 0.2f : 0.0f)) * float(std::max(0, gain));
 	b += wide(a.dest) ? (S[RWIDE] - 5) * 0.12f : (a.dest.y == 3 ? -(S[RWIDE] - 5) * 0.08f : 0.0f);   // 6 움직이는 방향 중앙·측면
-	const int rest = int(std::lround(S[REST] / 5.0f));
+	const int rest = int(S[REST]);   // 0·1·2명
 	if (rank_of(x.deep, x.nn, p.uid) < rest && dd > 3)
 		b -= 0.8f;   // 8 남는 수비 (우리 골대에 가까운 n명은 깊이 3 안)
 	b += 0.2f * float(zone_gap(depth(x.team, p.pos), me.a0, me.a1) - zone_gap(dd, me.a0, me.a1));
@@ -235,8 +237,8 @@ float defend(const State &s, const Sit &x, const float *S, int tac, const Player
 	const bool adj = manhattan(p.pos, x.ball) <= 1;
 	const int rk = rank_of(x.near, x.nn, p.uid);
 	// 9 달려드는 인원 = 0·1·2명 (막 뺏긴 차례엔 +1 — 역압박) · 10 태클 세기
-	const int n = int(std::lround(S[PRESS] / 5.0f)) + (x.lost_now && S[PRESS] >= 5 ? 1 : 0);
-	const bool presser = !(me.f & R_OUTLET) && (rk < n || ((me.f & R_PRESS1) && S[PRESS] >= 5 && manhattan(p.pos, x.ball) <= 3));
+	const int n = int(S[PRESS]) + (x.lost_now && S[PRESS] >= 1 ? 1 : 0);   // 0·1·2명
+	const bool presser = !(me.f & R_OUTLET) && (rk < n || ((me.f & R_PRESS1) && S[PRESS] >= 1 && manhattan(p.pos, x.ball) <= 3));
 	if (presser) {
 		const float tk = std::max(2.0f, S[TACKLE]);   // 하 = 따라만 감 (그래도 달려드는 선수는 공 쪽으로)
 		if (a.t == A_MOVE)
@@ -272,9 +274,7 @@ float score(const State &s, const Action &a, const Style &st) {
 	const Player &p = s.players[a.uid];
 	if (p.team != s.turn_team || !p.placed())
 		return 0.0f;
-	float S[SL_N];   // 단계(0·1·2) → 식 눈금 0·5·10
-	for (int i = 0; i < SL_N; i++)
-		S[i] = SL[st.tac][i] * 5.0f;
+	const float *S = SL[st.tac];
 	const Sit x = read(s);
 	if (x.atk)
 		return s.ball_owner == a.uid ? holder(s, x, S, st.tac, p, a) : runner(s, x, S, st.tac, p, a);
@@ -290,7 +290,7 @@ struct Reg {
 float tac_slider(int tac, int i) { return tac >= 0 && tac < TAC_N && i >= 0 && i < SL_N ? SL[tac][i] : 5.0f; }
 void set_tac_slider(int tac, int i, float v) {
 	if (tac >= 0 && tac < TAC_N && i >= 0 && i < SL_N)
-		SL[tac][i] = std::max(0.0f, std::min(2.0f, std::round(v)));   // 단계 0 하 · 1 중 · 2 상
+		SL[tac][i] = std::max(SL_LO[i], std::min(SL_HI[i], i >= RDIST && i <= PRESS ? std::round(v) : v));   // 7·8·9 = 칸·명 (정수)
 }
 float tac_eps(int tac) { return tac >= 0 && tac < TAC_N ? EPS : 0.0f; }
 
