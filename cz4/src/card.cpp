@@ -290,19 +290,21 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 	return std::max(1, v) + p.jk_up;   // 족보 +1 토큰은 거리로 깎인 뒤에 더한다 (먼 슛도 +1 그대로 — 최대 +1)
 }
 
-bool grow_ok(int pos, const int st[4], int k) {
-	int sum = st[0] + st[1] + st[2] + st[3];
+bool grow_ok(int pos, const int st[GROW_K], int k) {
+	int sum = 0;
+	for (int i = 0; i < GROW_K; i++)
+		sum += st[i];
 	if (sum >= GROW_N)
 		return false;
 	if (pos == TITAN || pos == MARKER || pos == ALLROUND)
-		return k < 3 && st[k] < 3;   // 자유
-	const int main = pos == CANNON || pos == LONGSHOT || pos == PASSER ? 0 : pos == TRICKSTER ? 1 : pos == HUNTER ? 2 : pos == MAESTRO || pos == SPRINTER || pos == WALL ? 3 : -1;   // 3 = 특수(마에스트로 패스 범위 · 스프린터 무브 범위 · 월 지속)
+		return k < 4 && st[k] < 3;   // 자유 (슛·패스·무브·디펜스 — 스탯마다 +3)
+	const int main = pos == CANNON || pos == LONGSHOT ? 0 : pos == PASSER ? 1 : pos == TRICKSTER ? 2 : pos == HUNTER ? 3 : pos == MAESTRO || pos == SPRINTER || pos == WALL ? 4 : -1;   // 4 = 특수(마에스트로 패스 범위 · 스프린터 무브 범위 · 월 지속)
 	if (main < 0)
 		return false;
 	if (st[main] < 1)
 		return k == main;   // 주 능력 +1 먼저 (전직 + 1 = 주 능력 줄 2칸 — 11-22 넷째)
-	const int never = pos == MAESTRO ? 0 : pos == SPRINTER ? 1 : -1;   // 마에스트로 킥 · 스프린터 무브는 못 키움
-	return k != main && k != never && k < 3 && st[k] < 1;
+	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘은 못 키움
+	return k != main && k != never && k < 4 && st[k] < 1;
 }
 
 int act_range(const State &s, const Player &p, int want, int skl) {

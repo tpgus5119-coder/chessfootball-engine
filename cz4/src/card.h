@@ -158,9 +158,9 @@ void set_lineup(State &s, int team, const int position[PER_TEAM], const int bonu
 int eff_hold(const State &s);
 void set_perks(State &s, int team, const int range_up[PER_TEAM], const int hold_up[PER_TEAM], const int kick_range_up[PER_TEAM] = nullptr);
 // 성장 길 (11-22 사용자 넷째): 전직이 주 능력 줄의 첫 칸 → 주 능력 +1 을 먼저 채운 뒤 나머지 스탯 +1씩 (모두 GROW_N 번 안). 타이탄·마커 = 아무 스탯 (스탯마다 +3).
-// 마에스트로 주 능력 = 패스 범위(킥 못 키움) · 스프린터 = 무브 범위(무브 못 키움) · 월 = 존 지속(11-22 셋째). st[4] = 킥 · 무브 · 디펜스 · 특수 — core/career.gd _stat_ok 와 같다
-constexpr int GROW_N = 4;
-bool grow_ok(int pos, const int st[4], int k);
+// 마에스트로 주 능력 = 패스 범위(킥 못 키움) · 스프린터 = 무브 범위(무브 못 키움) · 월 = 존 지속(11-22 셋째). st = 슛 · 패스 · 무브 · 디펜스 · 특수 — core/career.gd _stat_ok 와 같다
+constexpr int GROW_N = 4, GROW_K = 5;   // st[GROW_K] = 슛 · 패스 · 무브 · 디펜스 · 특수 (11-22 넷째 — 킥을 슛·패스로)
+bool grow_ok(int pos, const int st[GROW_K], int k);
 enum StatKind { ST_SHOT = 0, ST_PASS = 1, ST_DRIBBLE = 2, ST_DEF = 3 };
 void set_trial(State &s, int team_n);   // 시험판: 팀 인원 · 스킬 패시브
 extern int g_skill_pow;
