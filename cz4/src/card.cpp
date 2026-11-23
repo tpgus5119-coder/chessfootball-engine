@@ -240,7 +240,7 @@ static void sync_roles(State &s) {
 		s.role[t] = t == bt ? R_ATK : R_DEF;
 }
 
-bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 무브(이동·드리블) 힘 −1 · 범위 −1 (11-22 사용자, 겹치지 않음)
+bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 모든 판정 힘 −1 (11-23 사용자 — 범위 −1 없앰 · 겹치지 않음 · 공 든 마커는 꺼짐)
 	if (!p.placed())
 		return false;
 	for (const Player &m : s.players)
@@ -285,8 +285,8 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 		v += 1 - dd;   // 힘 = 능력치 + 1 − 거리 (킥·드리블 같은 식 — 11-22, 킥 4 · 무브 3)
 	if (p.charge == 2 && use != U_MOVE)
 		v += 1;   // 「강하게」 = 포인트 2개로 힘 +1 (패스·슛·드리블·디펜스 · 이동은 다가가 태클이 디펜스 힘이라 거기서 +1, 11-23)
-	if ((use == U_MOVE || use == U_DRIBBLE) && marked(s, p))
-		v -= 1;   // 마커 곁 = 무브(이동·드리블) 힘 −1 (11-22 사용자 — 겹치지 않음 · 버티는 힘도)
+	if (marked(s, p))
+		v -= 1;   // 마커 곁 = 모든 판정 힘 −1 (슛·패스·드리블·디펜스 — 11-23 사용자 「인접 1칸 적 스탯 −1 · 공 들면 못 잡음 유지」 · 겹치지 않음)
 	return std::max(1, v) + p.jk_up;   // 족보 +1 토큰은 거리로 깎인 뒤에 더한다 (먼 슛도 +1 그대로 — 최대 +1)
 }
 
@@ -311,8 +311,6 @@ int act_range(const State &s, const Player &p, int want, int skl) {
 		r = MOVE_RANGE + p.range_up;          // 무브 범위 3 고정 — 힘(무브 수치)과 따로 (11-22 사용자) · 스프린터 성장 (perks)
 	if (sr)
 		r += g_range_bonus;   // 마에스트로 패스 · 스프린터 무브 범위 +1 (11-22)
-	if (want == C_MOVE && marked(s, p))
-		r -= 1;   // 마커 곁 = 무브 범위 −1 (11-22)
 	return std::max(1, r);
 }
 
