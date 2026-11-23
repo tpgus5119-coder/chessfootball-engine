@@ -160,8 +160,9 @@ void set_perks(State &s, int team, const int range_up[PER_TEAM], const int hold_
 // 성장 (11-22 밤 사용자 「주 능력 강제 빼고 두 번째는 카드 2장」): 전직한 선수는 스탯마다 +GROW_MAX 까지 — 첫 +1 = 카드 1장 · 두 번째 = 2장 (부르는 쪽이 센다).
 // st = 슛 · 패스 · 무브 · 디펜스 · 특수(범위·지속) — core/career.gd grow_ok 와 같다
 constexpr int GROW_MAX = 2, GROW_K = 5;
-constexpr int MAIN_UP_MAX = 1;   // 메인 스탯업은 전직 혜택 뒤 한 번 (11-23 사용자 「메인스탯업 1개 가능 · 전직 제외하고」) — 월 지속 +1(최대 2차례) · 캐논 슛 힘 +1
+constexpr int MAIN_UP_MAX = 1;   // 메인 스탯업(main_k)은 전직 혜택 뒤 한 번 — 모든 직업 (11-23 사용자 「모든 선수 전직 + 메인스탯업 1 · 전직이 스탯업인 선수만 최종 메인 2」)
 bool grow_ok(int pos, const int st[GROW_K], int k);
+int main_k(int pos);
 enum StatKind { ST_SHOT = 0, ST_PASS = 1, ST_DRIBBLE = 2, ST_DEF = 3 };
 void set_trial(State &s, int team_n);   // 시험판: 팀 인원 · 스킬 패시브
 extern int g_skill_pow;
