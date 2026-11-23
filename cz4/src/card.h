@@ -160,6 +160,7 @@ void set_perks(State &s, int team, const int range_up[PER_TEAM], const int hold_
 // 성장 (11-22 밤 사용자 「주 능력 강제 빼고 두 번째는 카드 2장」): 전직한 선수는 스탯마다 +GROW_MAX 까지 — 첫 +1 = 카드 1장 · 두 번째 = 2장 (부르는 쪽이 센다).
 // st = 슛 · 패스 · 무브 · 디펜스 · 특수(범위·지속) — core/career.gd grow_ok 와 같다
 constexpr int GROW_MAX = 2, GROW_K = 5;
+constexpr int WALL_HOLD_MAX = 1;   // 월 지속 성장은 +1 까지 — 월 = 전직 4방 존 1차례 + 메인 업그레이드 지속 +1 = 최대 2차례 (11-23 사용자 「월은 최대 2지속」)
 bool grow_ok(int pos, const int st[GROW_K], int k);
 enum StatKind { ST_SHOT = 0, ST_PASS = 1, ST_DRIBBLE = 2, ST_DEF = 3 };
 void set_trial(State &s, int team_n);   // 시험판: 팀 인원 · 스킬 패시브

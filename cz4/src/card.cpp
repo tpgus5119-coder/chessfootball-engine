@@ -293,8 +293,8 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 bool grow_ok(int pos, const int st[GROW_K], int k) {
 	if (k < 0 || k >= GROW_K || pos == PROSPECT || st[k] >= GROW_MAX)
 		return false;
-	if (k == 4)   // 특수 = 마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속
-		return pos == MAESTRO || pos == LONGSHOT || pos == SPRINTER || pos == WALL;
+	if (k == 4)   // 특수 = 마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속(+1 까지)
+		return pos == MAESTRO || pos == LONGSHOT || pos == SPRINTER || (pos == WALL && st[k] < WALL_HOLD_MAX);
 	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : pos == LONGSHOT ? 0 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘 · 중거리 슈터 슛 힘은 못 키움
 	return k != never;
 }
@@ -683,7 +683,7 @@ int zone_tiles(const Player &p, V2 out[4]) {
 	return n;
 }
 
-static bool zone_all(const Player &p) { return g_zone4 || has_passive(p.position, WALL); }   // 월만 4방 존 (11-23) + 2차례 지속 (stance_left)
+static bool zone_all(const Player &p) { return g_zone4 || has_passive(p.position, WALL); }   // 월만 4방 존 (11-23) · 지속은 1 + 성장 +1 (stance_left)
 
 int stance_dir(const Player &p, V2 dest) {
 	if (zone_all(p))
@@ -1337,7 +1337,7 @@ static bool do_stance(State &s, int uid, V2 dest) {
 	pay_point(s);
 	Player &pm = s.players[uid];
 	pm.stance = pw;
-	pm.stance_left = has_passive(pm.position, WALL) ? 2 + pm.hold_up : 1;   // 월은 2차례 (11-21 사용자 「월 2턴 4방 존」) · 다른 선수 1차례
+	pm.stance_left = 1 + (has_passive(pm.position, WALL) ? std::min(pm.hold_up, WALL_HOLD_MAX) : 0);   // 모두 1차례 · 월만 지속 성장 +1 → 최대 2차례 (11-23 사용자 「월 4방이 전직 혜택 · 메인업그레이드로 지속 +1 · 최대 2지속」)
 	pm.zdir = dir;
 	if (wall_hit(s, uid))
 		jk_fire(s, team, JK_WALL, uid);   // 철벽 — 태세를 잡는 순간 (시도로 걸림) · 그 수비수 태세 힘 +1
