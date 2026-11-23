@@ -892,6 +892,9 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	const int prospects = int(next() % (PER_TEAM + 1));   // 유망주 0~5명
 	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 스탯 합 0 ~ 3 × level
 	const int mono = next() % 5 == 0 ? POOL[next() % JOBS_N] : 0;   // 20 % 는 한 직업 팀
+	// 몰아 키운 에이스 (11-23 사용자 「몰아 키운 에이스도 자가학습에 넣어」): 30 % 팀은 전직 선수 한 명이 카드 8~13장 (커리어 한 해 ≈ 26장 · 한 선수 다 키우기 ≈ 13장)
+	const bool ace_team = next() % 10 < 3;
+	const int ace = ace_team && prospects < PER_TEAM ? prospects + int(next() % (PER_TEAM - prospects)) : -1;
 	for (int i = 0; i < PER_TEAM; i++) {
 		if (i < prospects) {
 			pos[i] = PROSPECT;
@@ -906,8 +909,8 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			pos[i] = POOL[k];
 		}
 		int st[GROW_K] = {}, half[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속)
-		if (pos[i] != PROSPECT && level > 0) {   // 성장은 전직한 선수만 — 커리어와 같은 카드 셈 (두 번째 +1 = 카드 2장, 11-22 밤)
-			const int n = int(next() % (2 * level + 2));   // 카드 0 ~ 7장
+		if (pos[i] != PROSPECT && (level > 0 || i == ace)) {   // 성장은 전직한 선수만 — 커리어와 같은 카드 셈 (두 번째 +1 = 카드 2장, 11-22 밤)
+			const int n = i == ace ? 8 + int(next() % 6) : int(next() % (2 * level + 2));   // 카드 0 ~ 7장 · 에이스 8 ~ 13장
 			for (int c = 0; c < n; c++) {
 				int ok[GROW_K], m = 0;
 				for (int k = 0; k < GROW_K; k++)
