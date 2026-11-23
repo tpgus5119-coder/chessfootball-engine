@@ -25,7 +25,7 @@ struct Fnv {
 inline void hash_state(Fnv &f, const State &s) {
 	f.i(s.phase); f.i(s.first_team); f.i(s.placement_index); f.i(s.turn_team); f.i(s.ball_owner);
 	f.v(s.ball_pos); f.i(s.loose_team); f.i(s.pts); f.i(s.turn_count); f.i(s.winner); f.i(s.half);
-	f.i(s.redeploy); f.i(s.opener); f.i(s.hold);
+	f.i(s.redeploy); f.i(s.opener); f.i(s.hold); f.i(s.keeper);
 	f.i(s.touch_team); f.i(s.touch_mask); f.i(s.half_start);
 	for (int t = 0; t < 2; t++) {
 		f.i(s.goals[t]); f.i(s.role[t]); f.i(s.ghp[t]);

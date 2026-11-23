@@ -32,9 +32,9 @@ constexpr int OFF_ZONE = OFF_FWDMOVED + 2 * NT;        // 태세 존 칸 (11-21 
 constexpr int OFF_VIS_P = OFF_ZONE + 2 * NT;           // 이번 차례 사람이 있었던 칸 (11-21 되돌아가기 금지 — 예비 칸): 두는 팀의 me(0~3)·70 + 칸
 constexpr int OFF_VIS_B = OFF_VIS_P + TEAM_N * NT;     // 이번 차례 공이 있었던 칸: 70 + 칸
 constexpr int SPARSE_USED = OFF_VIS_B + NT;
-constexpr int SPARSE_RESERVE = 512 - 2 * NT - (TEAM_N + 1) * NT;   // 나중에 더할 칸 (11-19 512 칸 — 11-21 존 140 · 지나간 칸 350 을 여기서 씀, 22칸 남음)
+constexpr int SPARSE_RESERVE = 22;   // 예비 (11-23 판 10×8 — 칸 수 80 으로 다시 셈 · 옛 식 512 − 존 − 지나간 칸은 70칸 판 기준)   // 옛:   // 나중에 더할 칸 (11-19 512 칸 — 11-21 존 140 · 지나간 칸 350 을 여기서 씀, 22칸 남음)
 constexpr int SPARSE = SPARSE_USED + SPARSE_RESERVE;
-static_assert(SPARSE == 6180 && OFF_JKON == 4382 && OFF_LASTPASS == 5248 && OFF_VIS_P == 5808 && SPARSE_RESERVE == 22, "입력 칸 수 — tools/az/train.py CF_MODE=card · tools/cz/net_rules1121.py 와 같게");
+static_assert(NT == 80 && SPARSE == 7050 && OFF_JKON == 5002 && OFF_LASTPASS == 5988 && OFF_VIS_P == 6628 && SPARSE_RESERVE == 22, "입력 칸 수 (판 10×8, 11-23) — tools/az/train.py CF_MODE=card · tools/cz/net_board8.py 와 같게");
 constexpr int DENSE_USED = 56;
 constexpr int DENSE = 96;   // 뒤 40칸 = 예비
 constexpr int MAX_ACTIVE = 96;
@@ -57,11 +57,11 @@ constexpr int OFF_PLACE = OFF_STANCE_A + PER_TEAM;
 constexpr int OFF_FREE_END = OFF_PLACE + (POOL_N + 1) * NT;   // 옛 턴 종료 — 11-21 없앰, 빈 칸
 constexpr int OFF_SAVE = OFF_FREE_END + 1;
 constexpr int OFF_RUN = OFF_SAVE + NT;                 // 뒷공간 패스: (차는 내 5 × 받는 내 5)·70 + 칸 (옛 스킬 수 칸 1901~)
-constexpr int OFF_SAVE_RUN = OFF_RUN + PER_TEAM * PER_TEAM * NT;   // 빈 칸 키퍼 킥: 받는 내 5·70 + 칸
+constexpr int OFF_SAVE_RUN = OFF_RUN + PER_TEAM * PER_TEAM * NT;   // 키퍼 롱킥 (A_KEEP, 11-23): 받는 내 5·80 + 그 선수 칸 (옛 빈 칸 키퍼 킥 자리)
 constexpr int OFF_STANCE_DIR = OFF_SAVE + NT + OFF_PLACE + OFF_STANCE_A;   // (내 5 × 4 + 방향) — 방향은 평가 팀 기준(원정은 ±x 를 바꾼다) DIRS 순서 +x·−x·+y·−y
 constexpr int NA_USED = OFF_STANCE_DIR + PER_TEAM * 4;
-constexpr int NA = 4096;   // 뒤는 예비
-static_assert(OFF_RUN == 1901 && OFF_SAVE_RUN + PER_TEAM * NT <= OFF_STANCE_DIR && OFF_STANCE_DIR == 4016 && NA_USED == 4036 && NA >= NA_USED, "수 칸 수 — tools/az/train.py CF_MODE=card 와 같게");
+constexpr int NA = 5120;   // 뒤는 예비 (11-23 판 10×8 — 옛 4096)
+static_assert(OFF_RUN == 2171 && OFF_SAVE_RUN == 4171 && OFF_SAVE_RUN + PER_TEAM * NT <= OFF_STANCE_DIR && OFF_STANCE_DIR == 4586 && NA_USED == 4606 && NA >= NA_USED, "수 칸 수 (판 10×8, 11-23) — tools/az/train.py CF_MODE=card 와 같게");
 int action_index(const State &s, const Action &a);
 
 // ---------- 망 (본편과 같은 몸통, 머리표 MAGIC만 다르다) ----------

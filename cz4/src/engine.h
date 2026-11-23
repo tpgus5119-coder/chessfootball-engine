@@ -3,12 +3,14 @@
 // 유일한 규칙 출처는 docs/spec.md와 GDScript 원본이다 — 이 파일은 속도용 거울이며,
 // tests/test_native_parity.gd가 "같은 상태 + 같은 액션 = 같은 결과·같은 열거 순서"를 보증한다.
 // 결정론 계약: GDScript Dictionary의 삽입 순서(BFS 발견 순서)와 열거 순서를 그대로 재현한다.
+#include <algorithm>
 #include <cstdlib>
 #include <vector>
 
 namespace cf {
 
-constexpr int W = 10, H = 7, NT = W * H;          // board.gd
+constexpr int W = 10, H = 8, NT = W * H;          // board.gd — 11-23 사용자 「10×8 · 골대 2칸 · 박스 2×4」 (옛 10×7 · 골대 1칸)
+constexpr int GOAL_Y0 = H / 2 - 1, GOAL_N = 2;    // 골대 = 끝줄 가운데 두 칸 (y 3·4)
 constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
 constexpr int POOL_N = 10;                  // v7.0 드래프트 풀 종류 수 (game_state.gd DRAFT_POOL — 순서는 engine.cpp)
 constexpr int HALF_TURNS = 60, MAX_TURNS = 120, POINTS_PER_TURN = 2; // game_state.gd (v5.44 — 반마다 팀당 30턴)
@@ -47,13 +49,15 @@ constexpr int N_ACT = 13;   // 6 = 부스트 · 8 = 캐논 버티기 · 9 = 타�
 inline bool in_bounds(V2 t) { return t.x >= 0 && t.x < W && t.y >= 0 && t.y < H; }
 inline int idx(V2 t) { return t.y * W + t.x; } // in_bounds 전제
 inline int opponent(int team) { return team == HOME ? AWAY : HOME; }
-inline V2 goal_of(int team) { return team == HOME ? V2{ 0, 3 } : V2{ 9, 3 }; }
+inline V2 goal_tile(int team, int k) { return V2{ team == HOME ? 0 : W - 1, GOAL_Y0 + k }; }   // 골대 칸 k = 0·1
+inline V2 goal_of(int team) { return goal_tile(team, 0); }   // 대표 칸 (수 번호·표시용 — 판정은 두 칸 모두)
 inline V2 opponent_goal(int team) { return goal_of(opponent(team)); }
-inline bool is_goal(V2 t) { return t == goal_of(HOME) || t == goal_of(AWAY); }
+inline bool is_goal_of(int team, V2 t) { return t.x == (team == HOME ? 0 : W - 1) && t.y >= GOAL_Y0 && t.y < GOAL_Y0 + GOAL_N; }
+inline bool is_goal(V2 t) { return is_goal_of(HOME, t) || is_goal_of(AWAY, t); }
 inline int forward_dir(int team) { return team == HOME ? 1 : -1; }
 inline bool is_box_of(int team, V2 t) {
-	if (!in_bounds(t) || t.y < 2 || t.y > 4)
-		return false;
+	if (!in_bounds(t) || t.y < GOAL_Y0 - 1 || t.y > GOAL_Y0 + GOAL_N)
+		return false;   // 박스 2×4 — 골대 두 칸 + 위아래 한 칸 (y 2~5)
 	return team == HOME ? t.x < 2 : t.x >= W - 2;
 }
 inline bool is_any_box(V2 t) { return is_box_of(HOME, t) || is_box_of(AWAY, t); }
@@ -64,6 +68,7 @@ inline bool is_own_half(int team, V2 t) {
 	return team == HOME ? t.x < W / 2 : t.x >= W / 2;
 }
 inline int manhattan(V2 a, V2 b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
+inline int goal_dist(int team, V2 t) { return std::min(manhattan(t, goal_tile(team, 0)), manhattan(t, goal_tile(team, 1))); }   // 그 팀 골대까지 (가까운 칸)
 
 struct Player {
 	V2 pos = UNPLACED;
