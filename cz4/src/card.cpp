@@ -284,7 +284,7 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 	if ((kick && !g_kick_flat) || use == U_DRIBBLE)
 		v += 1 - dd;   // 힘 = 능력치 + 1 − 거리 (킥·드리블 같은 식 — 11-22, 킥 4 · 무브 3)
 	if (p.charge == 2 && use != U_MOVE)
-		v += 1;   // 「강하게」 = 포인트 2개로 힘 +1 (패스·슛·드리블·디펜스 — 이동은 없음, 11-22 셋째)
+		v += 1;   // 「강하게」 = 포인트 2개로 힘 +1 (패스·슛·드리블·디펜스 · 이동은 다가가 태클이 디펜스 힘이라 거기서 +1, 11-23)
 	if ((use == U_MOVE || use == U_DRIBBLE) && marked(s, p))
 		v -= 1;   // 마커 곁 = 무브(이동·드리블) 힘 −1 (11-22 사용자 — 겹치지 않음 · 버티는 힘도)
 	return std::max(1, v) + p.jk_up;   // 족보 +1 토큰은 거리로 깎인 뒤에 더한다 (먼 슛도 +1 그대로 — 최대 +1)
@@ -1307,12 +1307,12 @@ static bool can_stance(const State &s, const Player &p) {
 }
 
 // 「강하게」 (11-22 셋째 — 사용자 「2액포 소모하면 힘 +1 · 패스·슛·드리블·디펜스 · 이동은 없음」): 엔진에서는 「힘 모으기(1포인트, 행동으로 안 셈) → 바로 이어지는
-// 그 선수의 패스·슛·드리블·디펜스(1포인트)」 두 수. 공 임자 = 제자리 A_STANCE · 공 없는 선수 = A_SAVE(자기 칸 — 이어서 디펜스만). 화면은 「강하게」 단추 하나
+// 그 선수의 패스·슛·드리블·디펜스(1포인트)」 두 수. 공 임자 = 제자리 A_STANCE · 공 없는 선수 = A_SAVE(자기 칸 — 이어서 이동·디펜스, 11-23). 화면은 「강하게」 단추 하나
 static bool can_stance(const State &s, const Player &p);
 static bool charge_ok(const State &s, const Player &p) {
 	if (p.charge != 0 || s.pts < 2 || !can_act(s, p) || kickoff_turn(s))
 		return false;
-	return s.ball_owner == p.uid || can_stance(s, p);
+	return true;   // 공 임자 = 이어서 패스·슛·드리블 · 공 없는 선수 = 이어서 이동(다가가 태클 +1)·디펜스 (11-23 사용자 「강하게 이동도 넣어」)
 }
 
 static bool do_charge(State &s, int uid, V2 dest) {
@@ -1472,7 +1472,7 @@ bool value_path(const State &s, const Action &a, PathValue val, const void *ctx,
 
 static bool apply_one(State &s, const Action &a);
 
-static bool spend_charge(State &s, int uid, bool ok) {   // 모은 힘은 그 선수의 첫 패스·슛·드리블·디펜스 1번에 쓴다
+static bool spend_charge(State &s, int uid, bool ok) {   // 모은 힘은 그 선수의 첫 행동 1번에 쓴다 (이동 포함 — 11-23)
 	if (ok && s.players[uid].charge == 2)
 		s.players[uid].charge = 0;
 	return ok;
@@ -1492,7 +1492,7 @@ static bool apply_one(State &s, const Action &a) {
 	const bool u = a.uid >= 0 && a.uid < PLAYERS;
 	switch (a.t) {
 		case A_PLACE: return do_place(s, a.uid, a.dest);
-		case A_MOVE: return u && s.players[a.uid].charge == 0 && do_move(s, a.uid, a.dest);   // 이동은 「강하게」 없음
+		case A_MOVE: return u && spend_charge(s, a.uid, do_move(s, a.uid, a.dest));   // 강하게 이동 = 다가가 태클 힘 +1 (태클은 수비 힘 — act_power U_STANCE 가 모은 힘을 더함, 11-23)
 		case A_DRIBBLE: return u && spend_charge(s, a.uid, do_dribble(s, a.uid, a.dest));
 		case A_PASS: return u && spend_charge(s, a.uid, do_pass(s, a.uid, a.dest));
 		case A_SHOT: return u && spend_charge(s, a.uid, do_shot(s, a.uid));
@@ -1546,7 +1546,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 				if (carry) {
 					if (player_at(s, t) || is_any_box(t))
 						continue;
-				} else if (ko || s.ball_owner == u || q.charge || !move_dest_ok(s, q, t)) {   // 모은 선수는 이동 없음 (디펜스만)
+				} else if (ko || s.ball_owner == u || !move_dest_ok(s, q, t)) {   // 모은 선수도 이동 (11-23 강하게 이동)
 					continue;
 				}
 				if (!carry && s.loose_ball() && is_any_box(t)) {
