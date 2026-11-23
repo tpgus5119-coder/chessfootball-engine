@@ -14,7 +14,7 @@ namespace card {
 std::vector<Event> *g_events = nullptr;
 const std::vector<V2> *g_path = nullptr;
 
-static const int DRAFT_POOL[CARD_POOL_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, BOOSTER, TITAN, HUNTER, WALL, NOMAD };   // 칸 번호 = 망 입력 자리. 부스터·노마드 칸은 11-20부터 빈 칸
+static const int DRAFT_POOL[CARD_POOL_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, RECEIVER, TITAN, HUNTER, WALL, NOMAD };   // 칸 번호 = 망 입력 자리 (리시버 = 옛 부스터 칸 · 노마드 칸 = 링커)
 
 int pool_slot(int position) {
 	for (int k = 0; k < CARD_POOL_N; k++)
@@ -203,6 +203,9 @@ static bool wall_hit(const State &s, int uid) {
 // 지원: 공 임자와 아군 사이가 2칸 밖 → 2칸 안
 static bool support_hit(V2 a0, V2 a1, V2 b0, V2 b1) { return manhattan(a0, b0) > JK_NEAR && manhattan(a1, b1) <= JK_NEAR; }
 
+// 리시버 (11-24 사용자): 공을 잡을 때마다 버티는 힘 = 3 (+ 성장 1) — 어떻게 잡았든 · 태클로 깎이는 건 다른 선수와 같다
+static int catch_hold(const Player &p, int v) { return p.position == RECEIVER ? RECEIVE_HOLD + p.hold_up : v; }
+
 static void set_owner(State &s, int uid) {
 	for (Player &q : s.players)
 		if (q.uid != uid)
@@ -213,7 +216,7 @@ static void set_owner(State &s, int uid) {
 	s.hold = 0;
 	if (uid != -1) {
 		Player &p = s.players[uid];
-		s.hold = act_power(s, p, U_DRIBBLE);   // 버티는 힘 = 공 가진 선수의 드리블 능력치 (11-21 사용자 — 거리 반비례 없이, 차례마다 줄지 않음)
+		s.hold = catch_hold(p, act_power(s, p, U_DRIBBLE));   // 버티는 힘 = 공 가진 선수의 드리블 능력치 (11-21 사용자 — 거리 반비례 없이, 차례마다 줄지 않음)
 		if (s.touch_team != p.team) {
 			s.touch_team = p.team;
 			s.touch_mask = 0;
@@ -229,7 +232,7 @@ static void mark_steal(State &s) {
 	if (s.ball_owner >= 0)
 		rep_add(s, s.ball_owner, HUNTER);
 	if (s.ball_owner >= 0)
-		s.hold = act_power(s, s.players[s.ball_owner], U_STANCE);   // 막 뺏은 공 = 뺏은 선수의 태클(수비) 능력치로 버팀 (11-21 사용자) — 다음에 공을 다루면 드리블 능력치
+		s.hold = catch_hold(s.players[s.ball_owner], act_power(s, s.players[s.ball_owner], U_STANCE));   // 막 뺏은 공 = 뺏은 선수의 태클(수비) 능력치로 버팀 (11-21 사용자) — 다음에 공을 다루면 드리블 능력치
 }
 
 bool kickoff_turn(const State &s) {
@@ -296,8 +299,8 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 bool grow_ok(int pos, const int st[GROW_K], int k) {
 	if (k < 0 || k >= GROW_K || pos == PROSPECT || st[k] >= GROW_MAX)
 		return false;
-	if (k == 4 && pos != MAESTRO && pos != SPRINTER && pos != WALL && pos != CANNON)
-		return false;   // 특수 = 마에스트로 패스 범위 · 스프린터 무브 범위 · 캐논 슛 범위 · 월 지속(1칸 이동해도 태세 유지) — 11-23 직업 정리
+	if (k == 4 && pos != MAESTRO && pos != SPRINTER && pos != WALL && pos != CANNON && pos != RECEIVER)
+		return false;   // 리시버 = 버티기 +1 (11-24)   // 특수 = 마에스트로 패스 범위 · 스프린터 무브 범위 · 캐논 슛 범위 · 월 지속(1칸 이동해도 태세 유지) — 11-23 직업 정리
 	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘은 못 키움 (캐논 슛 힘은 메인 스탯업, 11-23)
 	return k != never;
 }
@@ -1136,7 +1139,7 @@ static bool do_dribble(State &s, int uid, V2 dest) {
 	const V2 end = dribble_run(s, uid, pow, path);
 	s.players[uid].pos = end;
 	if (s.ball_owner == uid) {
-		s.hold = pow;   // 드리블 뒤 버티는 힘 = 그 드리블의 판정 힘 (11-22 사용자 — 태클로 깎이고 다음 드리블·패스 받기 때 그 값으로)
+		s.hold = catch_hold(s.players[uid], pow);   // 드리블 뒤 버티는 힘 = 그 드리블의 판정 힘 (11-22 사용자 — 태클로 깎이고 다음 드리블·패스 받기 때 그 값으로)
 		if ((end.x - from.x) * forward_dir(team) > 0)
 			rep_add(s, uid, TRICKSTER);
 		if (end == path.back()) {   // 끝까지 간 드리블만 족보
@@ -1257,7 +1260,7 @@ static bool do_pass(State &s, int uid, V2 dest) {
 	const bool cut = send_ball(s, p, pow, path);
 	if (!cut && ru >= 0) {
 		set_owner(s, ru);
-		s.hold = pow;   // 받은 선수 버티는 힘 = 그 패스의 판정 힘 (11-22 사용자 「패스 받은 상태는 그 패스 값」 — 멀리서 온 공은 약하게 받음)
+		s.hold = catch_hold(s.players[ru], pow);   // 받은 선수 버티는 힘 = 그 패스의 판정 힘 (11-22 사용자 「패스 받은 상태는 그 패스 값」 — 멀리서 온 공은 약하게 받음)
 		pass_jokbo(s, uid, ru, from, dest);
 	} else if (!cut) {   // 스루패스 — 그 칸에 루즈볼 (우리 공 차례는 이어진다 · 줍는 건 이동)
 		for (Player &q : s.players)
@@ -1362,7 +1365,7 @@ static bool do_keep(State &s, int uid) {
 	emit({ 4, -1, uid, q.pos, pow, 3, 0, { q.pos } });   // 사건 4 · vb 3 = 키퍼 롱킥 (a = −1 · b = 받는 선수 · at = 받는 칸 · va = 힘)
 	s.keeper = -1;
 	set_owner(s, uid);
-	s.hold = pow;
+	s.hold = catch_hold(q, pow);
 	pay_point(s);
 	after_action(s, team);
 	return true;

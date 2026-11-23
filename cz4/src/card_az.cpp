@@ -897,8 +897,8 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	};
 	// 11-20 사용자 「구성 넓혀라」 — 커리어와 같은 꼴: 8직업 · 스탯은 킥(슛·패스 같이)·무브·디펜스 각 0~3
 	// 만능은 뺌 (11-20 사용자 「만능은 없고, 각 직업 4명씩」 — 옛 만능 에이스는 직업을 받음)
-	constexpr int JOBS_N = 9;   // 11-23 직업 9개 (스나이퍼를 캐논에 합침 — 옛 부스터 자리는 새 캐릭터 몫으로 빔 · 패서 = 옛 노마드 자리)
-	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, PASSER };
+	constexpr int JOBS_N = 10;   // 11-23 직업 9개 (스나이퍼를 캐논에 합침 — 옛 부스터 자리는 새 캐릭터 몫으로 빔 · 패서 = 옛 노마드 자리)
+	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, PASSER, RECEIVER };   // 11-24 리시버
 	int pos[PER_TEAM], bonus[PER_TEAM][4] = {}, rng_up[PER_TEAM] = {}, krng_up[PER_TEAM] = {}, hold_up[PER_TEAM] = {};
 	int used = 0;
 	const int prospects = int(next() % (PER_TEAM + 1));   // 유망주 0~5명
@@ -933,7 +933,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 				st[ok[next() % m]]++;   // 카드 1장 = +1 (11-23 스탯마다 한 번)
 			}
 		}
-		(pos[i] == MAESTRO || pos[i] == CANNON ? krng_up : pos[i] == WALL ? hold_up : rng_up)[i] = st[4];
+		(pos[i] == MAESTRO || pos[i] == CANNON ? krng_up : pos[i] == WALL || pos[i] == RECEIVER ? hold_up : rng_up)[i] = st[4];
 		bonus[i][ST_SHOT] = st[0];
 		bonus[i][ST_PASS] = st[1];
 		bonus[i][ST_DRIBBLE] = st[2];
