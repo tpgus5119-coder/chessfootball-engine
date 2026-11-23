@@ -294,7 +294,9 @@ bool grow_ok(int pos, const int st[GROW_K], int k) {
 	if (k < 0 || k >= GROW_K || pos == PROSPECT || st[k] >= GROW_MAX)
 		return false;
 	if (k == 4)   // 특수 = 마에스트로 패스 범위 · 스프린터 무브 범위 · 월 지속(+1 까지) — 슛 범위 성장은 없음 (11-23 스나이퍼를 캐논에 합침)
-		return pos == MAESTRO || pos == SPRINTER || (pos == WALL && st[k] < WALL_HOLD_MAX);
+		return pos == MAESTRO || pos == SPRINTER || (pos == WALL && st[k] < MAIN_UP_MAX);
+	if (k == 0 && pos == CANNON)
+		return st[k] < MAIN_UP_MAX;   // 캐논 슛 힘 = 메인 스탯업 한 번 (11-23)
 	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘은 못 키움 (캐논 슛 힘은 메인 스탯업, 11-23)
 	return k != never;
 }
@@ -1337,7 +1339,7 @@ static bool do_stance(State &s, int uid, V2 dest) {
 	pay_point(s);
 	Player &pm = s.players[uid];
 	pm.stance = pw;
-	pm.stance_left = 1 + (has_passive(pm.position, WALL) ? std::min(pm.hold_up, WALL_HOLD_MAX) : 0);   // 모두 1차례 · 월만 지속 성장 +1 → 최대 2차례 (11-23 사용자 「월 4방이 전직 혜택 · 메인업그레이드로 지속 +1 · 최대 2지속」)
+	pm.stance_left = 1 + (has_passive(pm.position, WALL) ? std::min(pm.hold_up, MAIN_UP_MAX) : 0);   // 모두 1차례 · 월만 지속 성장 +1 → 최대 2차례 (11-23 사용자 「월 4방이 전직 혜택 · 메인업그레이드로 지속 +1 · 최대 2지속」)
 	pm.zdir = dir;
 	if (wall_hit(s, uid))
 		jk_fire(s, team, JK_WALL, uid);   // 철벽 — 태세를 잡는 순간 (시도로 걸림) · 그 수비수 태세 힘 +1
