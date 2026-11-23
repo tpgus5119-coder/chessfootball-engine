@@ -33,7 +33,7 @@ static void emit(const Event &e) {
 // 만능 = 다섯 모두. 11-20 사용자 「부스터 노마드 빼서 8종」 — 둘은 감독 모드에 안 나온다 (풀 칸 5·9 는 망 입력·수 번호 자리 지키려 남김)
 
 // 측정용 스위치 (환경 변수 — knobs_from_env). 규칙이 아니다: 사용자 11-21 비교 실험용
-int g_zone4 = 1;         // 수비 존 = 모든 선수 제자리 사방 4칸 (11-21 사용자 「수비존 4로해」 — 규칙. 비교용 CF_ZONE4=0 = 곁 한 칸 방향 존)
+int g_zone4 = 0;         // 수비 존 = 곁 한 칸 방향 존 · 월만 제자리 사방 (11-23 사용자 「수비존 모두 1개로 · 월은 4방 기본」 — 규칙. 비교용 CF_ZONE4=1 = 모두 사방 4칸)
 int g_keep_pts = 0;      // CF_KEEP_PTS=1: 자기 차례에 공을 뺏겨도 남은 포인트로 차례를 이어 간다
 int g_kick_flat = 0;     // CF_KICK_FLAT=1: 킥 힘이 거리로 안 줄어듦
 
@@ -683,7 +683,7 @@ int zone_tiles(const Player &p, V2 out[4]) {
 	return n;
 }
 
-static bool zone_all(const Player &p) { return g_zone4 || has_passive(p.position, WALL); }   // 월은 4존 + 2차례 지속 (stance_left)
+static bool zone_all(const Player &p) { return g_zone4 || has_passive(p.position, WALL); }   // 월만 4방 존 (11-23) + 2차례 지속 (stance_left)
 
 int stance_dir(const Player &p, V2 dest) {
 	if (zone_all(p))

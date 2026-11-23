@@ -158,7 +158,7 @@ int action_index(const State &s, const Action &a) {
 			if (me < 0 || me >= PER_TEAM)
 				return -1;
 			i = (a.t == A_SHOT ? OFF_SHOT : OFF_STANCE_A) + me;
-			if (a.t == A_STANCE) {   // 제자리 = 4방 존 칸 (11-21) · 그 밖 = 방향 태세 칸 (비교용 CF_ZONE4=0)   // 월(제자리 사방) = 옛 태세 칸 · 그 밖 = 방향 태세 칸 (11-21)
+			if (a.t == A_STANCE) {   // 월(제자리 사방) = 옛 태세 칸 · 그 밖 = 방향 태세 칸 (11-23 규칙 · 비교용 CF_ZONE4=1 이면 모두 제자리)
 				int dir = stance_dir(s.players[a.uid], a.dest);
 				if (dir < 0)
 					return -1;

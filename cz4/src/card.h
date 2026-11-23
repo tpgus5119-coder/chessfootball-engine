@@ -34,7 +34,7 @@ constexpr int KICK_RANGE = 4;     // 킥 범위 상한 (범위 보너스만큼 �
 enum Jokbo { JK_GEGEN = 0, JK_WALL, JK_TRIANGLE, JK_SUPPORT, JK_FORWARD, JK_BREAK, N_JK };
 struct JkInfo { const char *name; int on; };   // on 0 = 꺼진 족보 (안 걸린다)
 extern JkInfo g_jk[N_JK];
-extern int g_zone4;   // 1 = 모든 선수 4방 존 (규칙) · 0 = 곁 한 칸 방향 존 (비교용)
+extern int g_zone4;   // 0 = 곁 한 칸 방향 존 · 월만 사방 (규칙, 11-23) · 1 = 모든 선수 4방 존 (비교용)
 constexpr int JK_NEAR = 2;   // 지원·삼각 패스의 「2칸 안」(맨해튼)
 constexpr int JK_AHEAD = 3;  // 전진 패스·돌파의 「3칸 이상 앞」
 
