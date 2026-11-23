@@ -107,7 +107,9 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[3] = float(std::max(0, std::min(s.half_turn(), g_half_turns))) / float(g_half_turns);
 	d[4] = float(s.goals[team]) / 2.0f;
 	d[5] = float(s.goals[opp]) / 2.0f;
-	// d[6] = 옛 골 데미지 차 · d[17]·d[18] = 옛 골문 체력 (11-21 없앰 — 늘 0, 이식 때 치우침으로 접음)
+	// d[6] = 옛 골 데미지 차 (늘 0)
+	d[17] = float(s.ghp[team]) / float(std::max(1, g_goal_hp));   // 골키퍼 체력 — 우리 골대 · 상대 골대 (11-23 다시 — 옛 골문 체력 칸 그대로)
+	d[18] = float(s.ghp[opp]) / float(std::max(1, g_goal_hp));
 	d[7] = s.turn_team == team;
 	d[8] = float(s.pts) / float(POINTS_PER_TURN);
 	d[9] = kickoff_turn(s);

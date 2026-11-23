@@ -44,6 +44,7 @@ void CardNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("dev_set", "uid", "x", "y", "stance"), &CardNative::dev_set);
 	ClassDB::bind_method(D_METHOD("dev_ball", "owner", "x", "y", "turn_team"), &CardNative::dev_ball);
 	ClassDB::bind_method(D_METHOD("dev_pos", "uid", "position"), &CardNative::dev_pos);
+	ClassDB::bind_method(D_METHOD("dev_ghp", "team", "hp"), &CardNative::dev_ghp);
 	ClassDB::bind_method(D_METHOD("act_range", "uid", "want", "sk"), &CardNative::act_range, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("jk_table"), &CardNative::jk_table);
 	ClassDB::bind_method(D_METHOD("act_power", "uid", "use", "dist", "sk"), &CardNative::act_power, DEFVAL(0), DEFVAL(0));
@@ -154,6 +155,11 @@ Dictionary CardNative::get_state() const {
 		role.push_back(s.role[t]);
 	}
 	d["goals"] = goals;
+	Array ghp;
+	for (int t = 0; t < 2; t++)
+		ghp.push_back(s.ghp[t]);
+	d["ghp"] = ghp;   // 골키퍼 남은 체력 (11-23)
+	d["ghp_max"] = ck::g_goal_hp;
 	d["role"] = role;
 	Array ps;
 	for (const ck::Player &p : s.players) {
@@ -453,6 +459,11 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 	ck::turn_clear(s);   // 개발용 판 — 지나간 칸·족보는 새로
 }
 
+
+void CardNative::dev_ghp(int team, int hp) {   // 개발·시험용 — 골키퍼 남은 체력 놓기 (11-23)
+	if (team == 0 || team == 1)
+		cur().ghp[team] = hp;
+}
 
 void CardNative::dev_pos(int uid, int position) {
 	if (uid >= 0 && uid < cf::PLAYERS)

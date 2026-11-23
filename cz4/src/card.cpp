@@ -36,6 +36,7 @@ static void emit(const Event &e) {
 int g_zone4 = 0;         // 수비 존 = 곁 한 칸 방향 존 · 월만 제자리 사방 (11-23 사용자 「수비존 모두 1개로 · 월은 4방 기본」 — 규칙. 비교용 CF_ZONE4=1 = 모두 사방 4칸)
 int g_keep_pts = 0;      // CF_KEEP_PTS=1: 자기 차례에 공을 뺏겨도 남은 포인트로 차례를 이어 간다
 int g_kick_flat = 0;     // CF_KICK_FLAT=1: 킥 힘이 거리로 안 줄어듦
+int g_goal_hp = 8;       // 골키퍼 체력 (11-23 사용자 — 강한 슛(힘 4~5) 두 방 · 측정용 CF_GOAL_HP)
 
 static inline bool has_passive(int position, int want) { return position == want || position == ALLROUND; }
 
@@ -500,6 +501,7 @@ static void reset_shape(State &s, int stay = -1) {
 // 반 시작(후반)·골 뒤 (11-22 사용자 「골 먹히면 킥오프」): 두 팀 모두 킥오프 대형 · scorer 가 공 없이 먼저, 상대(실점 팀)가 킥오프
 static void restart_half(State &s, int scorer) {
 	reset_shape(s);
+	s.ghp[HOME] = s.ghp[AWAY] = g_goal_hp;   // 킥오프마다 두 골대 체력 다시 참 (11-23 — 반 시작·골 뒤)
 	s.first_team = scorer;
 	s.role[scorer] = R_DEF;
 	s.role[opponent(scorer)] = R_ATK;
@@ -516,6 +518,7 @@ void new_match(State &s, int first) {
 	}
 	s.first_team = first;
 	s.opener = first;
+	s.ghp[HOME] = s.ghp[AWAY] = g_goal_hp;
 	s.role[first] = R_DEF;
 	s.role[opponent(first)] = R_ATK;
 	s.turn_team = placement_team(s);
@@ -559,6 +562,7 @@ void knobs_from_env() {
 	num("CF_ZONE4", g_zone4);
 	num("CF_KEEP_PTS", g_keep_pts);
 	num("CF_KICK_FLAT", g_kick_flat);
+	num("CF_GOAL_HP", g_goal_hp);
 	if (getenv("CF_NO_TIME") && atoi(getenv("CF_NO_TIME")))
 		g_time_input = 0;
 	if (const char *e = getenv("CF_JK"))   // 족보 켬 덮어쓰기 (측정용): "1,1,0,1,1,1" — card.h Jokbo 순서
@@ -792,7 +796,7 @@ struct Foe {
 // (a) 지는 경합 (b) 뺏기는 칸보다 우리 골 쪽 아군이 많은 길 (c) 뺏기는 칸이 우리 골에서 먼 길 (d) 걸음 (e) 위아래 대칭 동점 깨기.
 // 이기는 경합은 감점하지 않는다. 루즈볼 이동은 안 지면 줍는 길(pick)
 struct PathKey {
-	int lose = 0, pick = 0, cover = 0, near = 0, len = 0, mid = 0;
+	int lose = 0, pick = 0, left = 0, cover = 0, near = 0, len = 0, mid = 0;   // left = −남은 힘 (이긴 만큼만 남음 — 11-23, 남은 힘이 큰 길)
 };
 
 static PathKey path_key(const Foe *f, V2 from, const std::vector<V2> &p) {
@@ -805,6 +809,7 @@ static PathKey path_key(const Foe *f, V2 from, const std::vector<V2> &p) {
 	const State &s = *f->s;
 	const Player &me = s.players[f->uid];
 	bool met[PLAYERS] = {}, armed = f->arm == UNSET;
+	int cur = f->val;
 	if (f->pick)
 		k.pick = (std::find(p.begin(), p.end(), f->arm) != p.end()) == (f->pick > 0) ? 0 : 1;
 	if (!f->zone)
@@ -818,7 +823,7 @@ static PathKey path_key(const Foe *f, V2 from, const std::vector<V2> &p) {
 		if (du == -1 || met[du] || screened(s, me, t, p.back()))
 			continue;
 		met[du] = true;
-		if (f->val <= s.players[du].stance) {   // 동점은 수비 (zone_contest)
+		if (cur <= s.players[du].stance) {   // 동점은 수비 (zone_contest)
 			k.lose = 1;
 			const int fwd = forward_dir(me.team);
 			for (const Player &q : s.players)
@@ -827,13 +832,16 @@ static PathKey path_key(const Foe *f, V2 from, const std::vector<V2> &p) {
 			k.near = -manhattan(t, goal_of(me.team));   // 우리 골에서 가까울수록 나쁨
 			break;
 		}
+		cur -= s.players[du].stance;   // 이긴 만큼 남음 (11-23)
 	}
+	k.left = k.lose ? 0 : -cur;
 	return k;
 }
 
 static bool key_less(const PathKey &a, const std::vector<V2> &pa, const PathKey &b, const std::vector<V2> &pb) {
 	if (a.lose != b.lose) return a.lose < b.lose;
 	if (a.pick != b.pick) return a.pick < b.pick;
+	if (a.left != b.left) return a.left < b.left;
 	if (a.cover != b.cover) return a.cover < b.cover;
 	if (a.near != b.near) return a.near < b.near;
 	if (a.len != b.len) return a.len < b.len;
@@ -888,7 +896,7 @@ static std::vector<V2> best_path(V2 from, V2 dest, int max_steps, const Foe *f, 
 				if (best.empty() || key_less(k, cur, bk, best))
 					best = cur, bk = k;
 			},
-			[&](int lb) { return !best.empty() && bk.lose == 0 && bk.pick == 0 && lb > bk.len; });   // 안 지는 길이 이미 있다 — 더 긴 길은 볼 것 없다
+			[&](int lb) { return !best.empty() && bk.lose == 0 && bk.pick == 0 && bk.left == (f && f->zone ? -f->val : 0) && lb > bk.len; });   // 경합 없이 안 지는 길이 이미 있다 — 더 긴 길은 볼 것 없다
 	return best;
 }
 
@@ -974,7 +982,8 @@ static void path_blocked(const State &s, int team, int, bool, bool blocked[NT]) 
 }
 
 // 드리블 길의 존 경합. 끝 칸(뺏기면 그 칸)을 돌려준다
-static V2 dribble_run(State &s, int uid, int val, const std::vector<V2> &path) {
+// 존을 이기면 이긴 만큼만 힘이 남아 다음 존과 겨룬다 (11-23 사용자 「인터셉트 존을 2개 이상 만나면 차감되는 만큼 남고 다음 대결」) — val 은 남은 힘으로 바뀐다
+static V2 dribble_run(State &s, int uid, int &val, const std::vector<V2> &path) {
 	int zone[NT];
 	build_zone(s, opponent(s.players[uid].team), zone);
 	bool met[PLAYERS] = {};
@@ -988,6 +997,7 @@ static V2 dribble_run(State &s, int uid, int val, const std::vector<V2> &path) {
 			mark_steal(s);
 			return t;
 		}
+		val -= s.players[du].stance;   // 이긴 만큼 남음
 		s.players[du].stance = 0;   // 진 수비수는 태세가 풀린다
 		s.players[du].stance_left = 0;
 	}
@@ -1052,7 +1062,7 @@ static bool do_move(State &s, int uid, V2 dest) {
 	bool blocked[NT];
 	move_blocked(s, p, blocked);
 	const int rng = act_range(s, p, C_MOVE);
-	const int pow0 = act_power(s, p, U_DRIBBLE);
+	int pow0 = act_power(s, p, U_DRIBBLE);
 	std::vector<V2> path = g_path ? route(p.pos, dest, rng, nullptr, blocked, UNSET) : move_path(s, p, dest, rng, pow0, blocked);
 	if (path.empty())
 		return false;
@@ -1113,7 +1123,7 @@ static bool do_dribble(State &s, int uid, V2 dest) {
 	build_zone(s, opponent(p.team), zone);
 	bool blocked[NT];
 	path_blocked(s, p.team, uid, true, blocked);
-	const int pow = act_power(s, p, U_DRIBBLE, manhattan(p.pos, dest));   // 드리블 힘 = 가는 거리에 반비례 (11-21)
+	int pow = act_power(s, p, U_DRIBBLE, manhattan(p.pos, dest));   // 드리블 힘 = 가는 거리에 반비례 (11-21)
 	const Foe f{ &s, zone, uid, pow, UNSET, true, 0 };
 	std::vector<V2> path = route(p.pos, dest, act_range(s, p, C_MOVE), &f, blocked, UNSET);
 	if (path.empty())
@@ -1189,7 +1199,7 @@ static bool pass_dest_ok(const State &s, const Player &p, V2 t) {
 	return r ? r->team == p.team && r->uid != p.uid : through_ok(s, p, t);
 }
 
-static bool send_ball(State &s, const Player &p, int val, const std::vector<V2> &path) {   // true = 끊겼다
+static bool send_ball(State &s, const Player &p, int &val, const std::vector<V2> &path) {   // true = 끊겼다 · val = 남은 힘 (이긴 만큼만 남음, 11-23)
 	int zone[NT];
 	build_zone(s, opponent(p.team), zone);
 	bool met[PLAYERS] = {};
@@ -1203,6 +1213,7 @@ static bool send_ball(State &s, const Player &p, int val, const std::vector<V2> 
 			mark_steal(s);
 			return true;
 		}
+		val -= s.players[du].stance;   // 이긴 만큼 남음
 		s.players[du].stance = 0;
 		s.players[du].stance_left = 0;
 	}
@@ -1231,7 +1242,7 @@ static bool do_pass(State &s, int uid, V2 dest) {
 		return false;
 	const int dist = manhattan(p.pos, dest);
 	const bool aerial = dist >= LONG_PASS_MIN;
-	const int pow = act_power(s, p, U_PASS, dist);
+	int pow = act_power(s, p, U_PASS, dist);
 	std::vector<V2> path = kick_path(s, p, dest, pow);
 	if (path.empty())
 		return false;
@@ -1269,7 +1280,7 @@ static bool do_shot(State &s, int uid) {
 	const V2 goal = opponent_goal(p.team);
 	const int rng = act_range(s, p, C_SHOT);
 	const int dist = manhattan(p.pos, goal);
-	const int pow = act_power(s, p, U_SHOT, dist);
+	int pow = act_power(s, p, U_SHOT, dist);
 	int zone[NT];
 	build_zone(s, opponent(p.team), zone);
 	bool blocked[NT];
@@ -1285,9 +1296,30 @@ static bool do_shot(State &s, int uid) {
 		after_action(s, team);
 		return true;
 	}
-	// 슛 길의 경합을 다 뚫고 골대 칸에 닿았다 = 골 (11-21 사용자 「없애 ㄱ」 — 골문 체력·막힘·슛 데미지 없음)
+	// 슛 길의 경합을 뚫고 골대에 닿았다 — 남은 힘만큼 골키퍼 체력을 깎는다 · 0 이하면 골 (11-23 사용자 「골대 체력 · 이긴 만큼만 남음」)
+	const int keeper = opponent(team);
+	s.ghp[keeper] -= pow;
+	if (s.ghp[keeper] > 0) {   // 막힘 = 키퍼 롱킥 (11-23 사용자 「키퍼 롱킥으로 해」): 남은 체력 칸 안의 가장 앞 동료 발밑으로 공중볼 (없으면 골대에 가장 가까운 동료)
+		const V2 g = goal_of(keeper);
+		const int fwd = forward_dir(keeper);
+		int to = -1, best = -999, near = 999;
+		for (const Player &q : s.players)
+			if (q.team == keeper && q.placed() && !is_any_box(q.pos)) {
+				const int d = manhattan(g, q.pos);
+				const int adv = d <= s.ghp[keeper] ? q.pos.x * fwd : -999;
+				if (adv > best || (adv == best && d < near))
+					best = adv, near = d, to = q.uid;
+			}
+		emit({ 9, keeper, to, to >= 0 ? s.players[to].pos : g, s.ghp[keeper], pow, 0, {} });   // 사건 9 = 키퍼 롱킥 (a = 키퍼 팀 · b = 받는 선수 · va = 남은 체력 · vb = 깎은 힘 — 11-23)
+		if (to >= 0) {
+			set_owner(s, to);
+			s.hold = move_stat(s.players[to]);   // 받은 선수 버티는 힘 = 드리블 능력치 (킥오프처럼)
+		}
+		after_action(s, team);
+		return true;
+	}
 	s.goals[team] += 1;
-	emit({ 2, team, pow, goal, pow, 0, 1, {}, pow });
+	emit({ 2, team, pow, goal, pow, 0, 1, {}, pow });   // (골대 체력은 restart_half 가 다시 채운다)
 	s.turn_count += 1;   // 넣은 팀의 차례는 여기서 끝 — 반은 턴 시계로만 끝난다 (v15b)
 	if (!clock(s))
 		restart_half(s, team);   // 골 뒤 = 킥오프 (11-22 — 옛 키퍼 킥 없앰)

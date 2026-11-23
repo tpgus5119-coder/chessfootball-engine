@@ -28,7 +28,7 @@ inline void hash_state(Fnv &f, const State &s) {
 	f.i(s.redeploy); f.i(s.opener); f.i(s.hold);
 	f.i(s.touch_team); f.i(s.touch_mask); f.i(s.half_start);
 	for (int t = 0; t < 2; t++) {
-		f.i(s.goals[t]); f.i(s.role[t]);
+		f.i(s.goals[t]); f.i(s.role[t]); f.i(s.ghp[t]);
 		f.i(s.jk_turn[t]); f.i(s.jk_next[t]); f.i(s.tturn[t]);
 	}
 	f.i(s.team_n); f.i(s.sk_passive);

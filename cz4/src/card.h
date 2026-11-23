@@ -34,6 +34,7 @@ constexpr int KICK_RANGE = 4;     // 킥 범위 상한 (범위 보너스만큼 �
 enum Jokbo { JK_GEGEN = 0, JK_WALL, JK_TRIANGLE, JK_SUPPORT, JK_FORWARD, JK_BREAK, N_JK };
 struct JkInfo { const char *name; int on; };   // on 0 = 꺼진 족보 (안 걸린다)
 extern JkInfo g_jk[N_JK];
+extern int g_goal_hp;   // 골키퍼 체력 (11-23 사용자 「적절한 체력값으로」 — 8 = 강한 슛 두 방 · 측정용 CF_GOAL_HP)
 extern int g_zone4;   // 0 = 곁 한 칸 방향 존 · 월만 사방 (규칙, 11-23) · 1 = 모든 선수 4방 존 (비교용)
 constexpr int JK_NEAR = 2;   // 지원·삼각 패스의 「2칸 안」(맨해튼)
 constexpr int JK_AHEAD = 3;  // 전진 패스·돌파의 「3칸 이상 앞」
@@ -77,6 +78,7 @@ struct State {
 	int half_order[PLAYERS] = {};
 	int opener = HOME;
 	int goals[2] = { 0, 0 };
+	int ghp[2] = { 0, 0 };              // 팀 t 골대(키퍼) 남은 체력 — 슛의 남은 힘만큼 깎이고 0 이하면 골 · 킥오프(경기·반 시작·골 뒤)마다 다시 참 (11-23 사용자)
 	int role[2] = { R_DEF, R_ATK };
 	int hold = 0;                      // 공 임자가 태클을 버티는 힘 = 그 선수 드리블 능력치 (막 뺏은 공 = 뺏은 선수 태클 능력치) — 11-21 사용자, 차례마다 줄지 않음
 	int touch_team = -1, touch_mask = 0;   // 이번 공격에서 공을 만진 아군 (uid 비트) — 가담
