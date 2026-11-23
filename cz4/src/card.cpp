@@ -290,25 +290,11 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 	return std::max(1, v) + p.jk_up;   // 족보 +1 토큰은 거리로 깎인 뒤에 더한다 (먼 슛도 +1 그대로 — 최대 +1)
 }
 
-// 직업의 메인 스탯 (career.gd GROW_MAIN) — 슛 0 · 패스 1 · 무브 2 · 디펜스 3 · 특수 4(범위·지속). 타이탄·마커는 없음
-int main_k(int pos) {
-	switch (pos) {
-		case CANNON: return 0;
-		case PASSER: return 1;
-		case TRICKSTER: return 2;
-		case HUNTER: return 3;
-		case WALL: case MAESTRO: case SPRINTER: return 4;
-		default: return -1;
-	}
-}
-
 bool grow_ok(int pos, const int st[GROW_K], int k) {
 	if (k < 0 || k >= GROW_K || pos == PROSPECT || st[k] >= GROW_MAX)
 		return false;
 	if (k == 4 && pos != MAESTRO && pos != SPRINTER && pos != WALL)
 		return false;   // 특수 = 마에스트로 패스 범위 · 스프린터 무브 범위 · 월 지속 — 슛 범위 성장은 없음 (11-23 스나이퍼를 캐논에 합침)
-	if (k == main_k(pos))
-		return st[k] < MAIN_UP_MAX;   // 메인 스탯업은 전직 뒤 한 번 — 전직이 스탯 +1 인 직업(트릭스터·헌터·링커·마에스트로·스프린터)은 메인 +2 까지 (11-23 사용자 「모든 선수 전직 + 메인스탯업 1」)
 	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘은 못 키움 (캐논 슛 힘은 메인 스탯업, 11-23)
 	return k != never;
 }
@@ -1351,7 +1337,7 @@ static bool do_stance(State &s, int uid, V2 dest) {
 	pay_point(s);
 	Player &pm = s.players[uid];
 	pm.stance = pw;
-	pm.stance_left = 1 + (has_passive(pm.position, WALL) ? std::min(pm.hold_up, MAIN_UP_MAX) : 0);   // 모두 1차례 · 월만 지속 성장 +1 → 최대 2차례 (11-23 사용자 「월 4방이 전직 혜택 · 메인업그레이드로 지속 +1 · 최대 2지속」)
+	pm.stance_left = 1 + (has_passive(pm.position, WALL) ? std::min(pm.hold_up, GROW_MAX) : 0);   // 모두 1차례 · 월만 지속 성장 +1 → 최대 2차례 (11-23 사용자 「월 4방이 전직 혜택 · 메인업그레이드로 지속 +1 · 최대 2지속」)
 	pm.zdir = dir;
 	if (wall_hit(s, uid))
 		jk_fire(s, team, JK_WALL, uid);   // 철벽 — 태세를 잡는 순간 (시도로 걸림) · 그 수비수 태세 힘 +1

@@ -908,8 +908,8 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			used |= 1 << k;
 			pos[i] = POOL[k];
 		}
-		int st[GROW_K] = {}, half[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속)
-		if (pos[i] != PROSPECT && (level > 0 || i == ace)) {   // 성장은 전직한 선수만 — 커리어와 같은 카드 셈 (두 번째 +1 = 카드 2장, 11-22 밤)
+		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속)
+		if (pos[i] != PROSPECT && (level > 0 || i == ace)) {   // 성장은 전직한 선수만 — 커리어와 같은 카드 셈 (카드 1장 = +1 · 스탯마다 한 번, 11-23)
 			const int n = i == ace ? 8 + int(next() % 6) : int(next() % (2 * level + 2));   // 카드 0 ~ 7장 · 에이스 8 ~ 13장
 			for (int c = 0; c < n; c++) {
 				int ok[GROW_K], m = 0;
@@ -918,11 +918,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 						ok[m++] = k;
 				if (!m)
 					break;
-				const int k = ok[next() % m];
-				if (st[k] == 1 && !half[k])
-					half[k] = 1;
-				else
-					half[k] = 0, st[k]++;
+				st[ok[next() % m]]++;   // 카드 1장 = +1 (11-23 스탯마다 한 번)
 			}
 		}
 		(pos[i] == MAESTRO || pos[i] == LONGSHOT ? krng_up : pos[i] == WALL ? hold_up : rng_up)[i] = st[4];
