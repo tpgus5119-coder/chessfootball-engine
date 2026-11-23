@@ -45,8 +45,8 @@ static bool sk_power(int pos, int sk, int use) {   // 이 수가 힘 +1 스킬�
 		return false;
 	const bool all = pos == ALLROUND && sk == 1;
 	const bool kick = use == U_PASS || use == U_SHOT, mv = use == U_MOVE || use == U_DRIBBLE;
-	// 11-22 직업 10개: 캐논 = 슛 힘 · 패서 = 패스 힘 · 트릭스터 = 무브 힘 · 헌터 = 수비 힘 (중거리 슈터는 「슛이 거리로 안 약해짐」 — act_power · 만능은 다)
-	return (use == U_SHOT && pos == CANNON) || (use == U_PASS && pos == PASSER) || (kick && all) || (mv && (pos == TRICKSTER || all)) || (use == U_STANCE && (pos == HUNTER || all));
+	// 11-23 캐논 = 「슛이 거리로 안 약해짐」(옛 스나이퍼와 합침 — act_power) · 패서 = 패스 힘 · 트릭스터 = 무브 힘 · 헌터 = 수비 힘 (중거리 슈터는 「슛이 거리로 안 약해짐」 — act_power · 만능은 다)
+	return (use == U_PASS && pos == PASSER) || (kick && all) || (mv && (pos == TRICKSTER || all)) || (use == U_STANCE && (pos == HUNTER || all));
 }
 static bool sk_range(int pos, int sk, int want) {   // 이 수가 범위 +1 스킬인가
 	if (!sk)
@@ -280,7 +280,7 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 		v += g_skill_pow;
 	// 거리 반비례: 힘 = 능력치 + 1 − 거리 (킥 4 → 1칸 4 · 2칸 3 · 3칸 2 · 4칸 1 · 드리블 3 → 3 · 2 · 1, 거리 0 = 공을 잡고 선 힘 = 능력치)
 	// 측정용 CF_KICK_FLAT=1 이면 킥은 거리와 상관없이 수치 그대로
-	const int dd = use == U_SHOT && p.position == LONGSHOT ? 1 : d;   // 중거리 슈터 = 슛이 거리로 안 약해짐 (늘 1칸 힘 — 11-22 사용자, 「강하게」 없앰)
+	const int dd = use == U_SHOT && p.position == CANNON ? 1 : d;   // 캐논 = 슛이 거리로 안 약해짐 (늘 1칸 힘 — 11-23 사용자 「캐논·스나이퍼 합쳐라 · 거리 반비례 없음 · 힘 +1 은 메인 스탯업」)
 	if ((kick && !g_kick_flat) || use == U_DRIBBLE)
 		v += 1 - dd;   // 힘 = 능력치 + 1 − 거리 (킥·드리블 같은 식 — 11-22, 킥 4 · 무브 3)
 	if (p.charge == 2 && use != U_MOVE)
@@ -293,9 +293,9 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 bool grow_ok(int pos, const int st[GROW_K], int k) {
 	if (k < 0 || k >= GROW_K || pos == PROSPECT || st[k] >= GROW_MAX)
 		return false;
-	if (k == 4)   // 특수 = 마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속(+1 까지)
-		return pos == MAESTRO || pos == LONGSHOT || pos == SPRINTER || (pos == WALL && st[k] < WALL_HOLD_MAX);
-	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : pos == LONGSHOT ? 0 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘 · 중거리 슈터 슛 힘은 못 키움
+	if (k == 4)   // 특수 = 마에스트로 패스 범위 · 스프린터 무브 범위 · 월 지속(+1 까지) — 슛 범위 성장은 없음 (11-23 스나이퍼를 캐논에 합침)
+		return pos == MAESTRO || pos == SPRINTER || (pos == WALL && st[k] < WALL_HOLD_MAX);
+	const int never = pos == MAESTRO ? 1 : pos == SPRINTER ? 2 : -1;   // 마에스트로 패스 힘 · 스프린터 무브 힘은 못 키움 (캐논 슛 힘은 메인 스탯업, 11-23)
 	return k != never;
 }
 
