@@ -34,7 +34,7 @@ constexpr int OFF_VIS_B = OFF_VIS_P + TEAM_N * NT;     // 이번 차례 공이 �
 constexpr int SPARSE_USED = OFF_VIS_B + NT;
 constexpr int SPARSE_RESERVE = 22;   // 예비 (11-23 판 10×8 — 칸 수 80 으로 다시 셈 · 옛 식 512 − 존 − 지나간 칸은 70칸 판 기준)   // 옛:   // 나중에 더할 칸 (11-19 512 칸 — 11-21 존 140 · 지나간 칸 350 을 여기서 씀, 22칸 남음)
 constexpr int SPARSE = SPARSE_USED + SPARSE_RESERVE;
-static_assert(NT == 80 && SPARSE == 7050 && OFF_JKON == 5002 && OFF_LASTPASS == 5988 && OFF_VIS_P == 6628 && SPARSE_RESERVE == 22, "입력 칸 수 (판 10×8, 11-23) — tools/az/train.py CF_MODE=card · tools/cz/net_board8.py 와 같게");
+static_assert(NT == 88 && SPARSE == 7746 && OFF_JKON == 5498 && OFF_LASTPASS == 6580 && OFF_VIS_P == 7284 && SPARSE_RESERVE == 22, "입력 칸 수 (판 11×8, 11-23) — tools/az/train.py CF_MODE=card · tools/cz/net_board8.py 와 같게");
 constexpr int DENSE_USED = 56;
 constexpr int DENSE = 96;   // 뒤 40칸 = 예비
 constexpr int MAX_ACTIVE = 96;
@@ -61,7 +61,7 @@ constexpr int OFF_SAVE_RUN = OFF_RUN + PER_TEAM * PER_TEAM * NT;   // 키퍼 롱
 constexpr int OFF_STANCE_DIR = OFF_SAVE + NT + OFF_PLACE + OFF_STANCE_A;   // (내 5 × 4 + 방향) — 방향은 평가 팀 기준(원정은 ±x 를 바꾼다) DIRS 순서 +x·−x·+y·−y
 constexpr int NA_USED = OFF_STANCE_DIR + PER_TEAM * 4;
 constexpr int NA = 5120;   // 뒤는 예비 (11-23 판 10×8 — 옛 4096)
-static_assert(OFF_RUN == 2171 && OFF_SAVE_RUN == 4171 && OFF_SAVE_RUN + PER_TEAM * NT <= OFF_STANCE_DIR && OFF_STANCE_DIR == 4586 && NA_USED == 4606 && NA >= NA_USED, "수 칸 수 (판 10×8, 11-23) — tools/az/train.py CF_MODE=card 와 같게");
+static_assert(OFF_RUN == 2387 && OFF_SAVE_RUN == 4587 && OFF_SAVE_RUN + PER_TEAM * NT <= OFF_STANCE_DIR && OFF_STANCE_DIR == 5042 && NA_USED == 5062 && NA >= NA_USED, "수 칸 수 (판 11×8, 11-23) — tools/az/train.py CF_MODE=card 와 같게");
 int action_index(const State &s, const Action &a);
 
 // ---------- 망 (본편과 같은 몸통, 머리표 MAGIC만 다르다) ----------

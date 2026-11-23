@@ -9,7 +9,7 @@
 
 namespace cf {
 
-constexpr int W = 10, H = 8, NT = W * H;          // board.gd — 11-23 사용자 「10×8 · 골대 2칸 · 박스 2×4」 (옛 10×7 · 골대 1칸)
+constexpr int W = 11, H = 8, NT = W * H;          // board.gd — 11-23 사용자 「11×8 ㄱㄱ · 골대 2칸 · 박스 2×4」 (옛 10×7 · 골대 1칸) · 가운데 줄 x 5 는 누구 진영도 아님
 constexpr int GOAL_Y0 = H / 2 - 1, GOAL_N = 2;    // 골대 = 끝줄 가운데 두 칸 (y 3·4)
 constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
 constexpr int POOL_N = 10;                  // v7.0 드래프트 풀 종류 수 (game_state.gd DRAFT_POOL — 순서는 engine.cpp)
@@ -65,7 +65,7 @@ inline bool is_any_box(V2 t) { return is_box_of(HOME, t) || is_box_of(AWAY, t); 
 inline bool is_own_half(int team, V2 t) {
 	if (!in_bounds(t))
 		return false;
-	return team == HOME ? t.x < W / 2 : t.x >= W / 2;
+	return team == HOME ? t.x < W / 2 : t.x >= W - W / 2;   // 11칸 — 가운데 줄(x 5)은 어느 쪽도 아님
 }
 inline int manhattan(V2 a, V2 b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
 inline int goal_dist(int team, V2 t) { return std::min(manhattan(t, goal_tile(team, 0)), manhattan(t, goal_tile(team, 1))); }   // 그 팀 골대까지 (가까운 칸)

@@ -1567,7 +1567,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 		int team = placement_team(s);
 		if (team < 0)
 			return;
-		int x0 = team == HOME ? 0 : W / 2;
+		int x0 = team == HOME ? 0 : W - W / 2;   // 11칸 — 가운데 줄(x 5)은 배치 밖
 		for (int slot = 0; slot <= SLOT_PROSPECT; slot++) {
 			if (!slot_open(s, team, slot))
 				continue;
