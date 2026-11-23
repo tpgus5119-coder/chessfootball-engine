@@ -45,8 +45,8 @@ static bool sk_power(int pos, int sk, int use) {   // 이 수가 힘 +1 스킬�
 		return false;
 	const bool all = pos == ALLROUND && sk == 1;
 	const bool kick = use == U_PASS || use == U_SHOT, mv = use == U_MOVE || use == U_DRIBBLE;
-	// 11-23 캐논 = 「슛이 거리로 안 약해짐」(act_power) · 링커 = 스루패스만(패스 힘 +1 없앰, 11-23 직업 정리) · 트릭스터 = 무브 힘 · 헌터 = 수비 힘 (중거리 슈터는 「슛이 거리로 안 약해짐」 — act_power · 만능은 다)
-	return (kick && all) || (mv && (pos == TRICKSTER || all)) || (use == U_STANCE && (pos == HUNTER || all));
+	// 11-23 캐논 = 「슛이 거리로 안 약해짐」(act_power) · 링커 = 패스 힘 +1 (스루패스는 누구나 — 11-23 사용자) · 트릭스터 = 무브 힘 · 헌터 = 수비 힘 (중거리 슈터는 「슛이 거리로 안 약해짐」 — act_power · 만능은 다)
+	return (use == U_PASS && pos == PASSER) || (kick && all) || (mv && (pos == TRICKSTER || all)) || (use == U_STANCE && (pos == HUNTER || all));
 }
 static bool sk_range(int pos, int sk, int want) {   // 이 수가 범위 +1 스킬인가
 	if (!sk)
@@ -1084,10 +1084,14 @@ static bool do_move(State &s, int uid, V2 dest) {
 		if (!at_h)   // 공 임자 곁에 닿으면 밀지 않는다
 			titan_push(s, me);
 	}
-	{   // 움직이면 태세가 풀린다 (11-23 사용자 「태세는 움직이거나 질 때까지 유지」) — 월은 지속 성장이 있으면 1칸 이동해도 유지 · 다가가 태클은 없음(11-23 — 공은 태세로만 뺏는다)
+	{   // 움직이면 태세가 풀린다 (11-23 사용자 「태세는 다른 행동 전까지 유지」) — 월은 지속 성장이 있으면 1칸 이동해도 유지
+		// 태세 → 이동 = 태클 (11-23 사용자 「태세+이동도 태클」): 태세 중이던 선수가 움직여 상대 공 임자 곁에 서면 태클 · 힘 = 태세 힘 + 1 − 움직인 칸 (킥·드리블과 같은 거리 감쇠)
 		Player &mv = s.players[uid];
+		const int st0 = mv.stance;
 		if (mv.stance > 0 && !(has_passive(mv.position, WALL) && mv.hold_up > 0 && path.size() == 1))
 			mv.stance = 0, mv.stance_left = 0;
+		if (st0 > 0 && pk < 0 && s.ball_owner >= 0 && s.players[s.ball_owner].team != team && manhattan(mv.pos, s.players[s.ball_owner].pos) == 1 && !is_any_box(mv.pos))
+			tackle_do(s, uid, std::max(1, st0 + 1 - int(path.size())));
 	}
 	const V2 end = s.players[uid].pos;
 	const bool done = end == path.back() && (pk < 0 || s.ball_owner == uid);   // 끝까지 간 이동만 족보
@@ -1153,12 +1157,10 @@ static void pass_targets(const State &s, const Player &p, int rng, Reach &ground
 
 // 패스 받을 칸 = 동료(나 아님) 칸 — 오프사이드 없음(11-21 사용자). 빈 칸 패스 = 스루패스(through_ok — 11-22 밤). 공이 이번 차례 있었던 칸 ×
 // ---------- 스루패스 (11-22 밤 사용자 「주우러 가는 것도 포인트 · 포인트 1개 남았으면 적 이동 범위 밖 칸만」) ----------
-// 스루패스 = 앞쪽 **빈 칸**으로 차는 패스(1포인트) — 링커만 (11-23 직업 정리). 공은 그 칸에 루즈볼로 남고,
+// 스루패스 = 앞쪽 **빈 칸**으로 차는 패스(1포인트) — 누구나 (11-23 사용자 「스루패스 모두 가능」). 공은 그 칸에 루즈볼로 남고,
 // 동료가 이동으로 주워야 내 공이 된다(그것도 포인트 1 · 그 동료의 행동). 칸 조건: 앞쪽 빈 칸 · 박스·골대 아님 · 동료(차는 선수 말고) 하나가 뛰어 닿음 ·
 // **차는 수가 이번 차례 마지막 포인트면 적 누구의 이동 범위에도 들지 않는 칸** (상대가 먼저 줍지 못하게 — 줍는 건 다음 우리 차례)
 static bool through_ok(const State &s, const Player &p, V2 t) {
-	if (p.position != PASSER)   // 스루패스 = 링커만 (11-23 직업 정리 — 옛 마에스트로 5칸 공중 스루 없앰)
-		return false;
 	if (!in_bounds(t) || player_at(s, t) || is_any_box(t) || is_goal(t) || (t.x - p.pos.x) * forward_dir(p.team) <= 0)
 		return false;
 	bool mate = false;
