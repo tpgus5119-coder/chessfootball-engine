@@ -108,8 +108,12 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[4] = float(s.goals[team]) / 2.0f;
 	d[5] = float(s.goals[opp]) / 2.0f;
 	// d[6] = 옛 골 데미지 차 (늘 0)
-	d[17] = float(s.ghp[team]) / float(std::max(1, g_goal_hp));   // 골키퍼 체력 — 우리 골대 · 상대 골대 (11-23 다시 — 옛 골문 체력 칸 그대로)
-	d[18] = float(s.ghp[opp]) / float(std::max(1, g_goal_hp));
+	d[17] = float(s.ghp[team]) / 5.0f;   // 골키퍼 남은 체력 — 우리 · 상대 (옛 골문 체력 칸)
+	d[18] = float(s.ghp[opp]) / 5.0f;
+	d[19] = float(s.gk_kick[team]) / 5.0f;   // 골키퍼 킥 힘 · 킥 범위 — 우리 · 상대 (11-24 · 옛 역습 보너스·괄호 합 칸)
+	d[20] = float(s.gk_kick[opp]) / 5.0f;
+	d[21] = float(s.gk_range[team]) / 6.0f;
+	d[22] = float(s.gk_range[opp]) / 6.0f;
 	d[7] = s.turn_team == team;
 	d[8] = float(s.pts) / float(POINTS_PER_TURN);
 	d[9] = kickoff_turn(s);
@@ -122,8 +126,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[14] = s.role[team] == R_ATK;
 	d[15] = s.phase == PLAY && s.ball_team() == team;
 	d[16] = float(std::max(-3.0, std::min(3.0, heuristic(s, team))) / 3.0);
-	// d[19]·d[20] = 옛 역습 보너스 (11-20 없앰 — 칸 자리만 남김, 늘 0)
-	// d[21]·d[22] = 옛 괄호 합 · d[25]·d[53] = 옛 역습 행동 수 · d[44]~d[49]·d[54]·d[55] = 옛 족보 진행·혜택 (11-21 없앰 — 늘 0, 이식 때 치우침으로 접음)
+	// d[25]·d[53] = 옛 역습 행동 수 · d[44]~d[49]·d[54]·d[55] = 옛 족보 진행·혜택 (11-21 없앰 — 늘 0, 이식 때 치우침으로 접음)
 	d[23] = s.keeper == team;   // 키퍼가 공을 쥔 팀 — 우리 · 상대 (11-23 키퍼 롱킥 — 옛 키퍼 킥 팀 칸)
 	d[24] = s.keeper == opp;
 	for (int k = 0; k < N_JK; k++) {   // 이번 차례(남의 차례면 다음 차례 몫)에 이미 걸린 족보 — 같은 족보는 한 차례 한 번 (11-21)
@@ -938,6 +941,10 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	}
 	set_lineup(s, team, pos, bonus);
 	set_perks(s, team, rng_up, hold_up, krng_up);
+	// 골키퍼 성장 (11-24 사용자): 디펜스 +1 · 킥 범위 +1 · 둘 중 하나 한 번 더 — 선방형 디펜스 5 · 범위 5 / 발밑형 디펜스 4 · 범위 6
+	const int gn = int(next() % (level + 1)), side = int(next() % 2);   // 성장 0~3번
+	const int gd = gn == 0 ? 0 : gn == 2 ? 1 : gn == 1 ? side : 1 + side, gr = gn - gd;
+	set_keeper(s, team, GK_DEF0 + gd, GK_KICK0, GK_RANGE0 + gr);
 }
 
 // 일기토 수 하나를 기록으로 (자가대전 — 망이 일기토 판단도 배우게). 정책 = duel::ai_act가 숨은 경우들을 더한 것
