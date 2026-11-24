@@ -148,15 +148,6 @@ struct Rec {
 };
 static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 784, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
 
-struct GenStats {
-	int games = 0, home = 0, away = 0, draws = 0, kos = 0;   // kos = 0:0 판 (v10 — HP가 없다)
-	int duels = 0;   // 골 동점 → 일기토로 가린 판 (v11 — 10-31 자가대전에 넣음). draws = 일기토까지 비긴 판
-	long long moves = 0, goals = 0, lost = 0;
-};
-// 양 팀 모두 탐색으로 드래프트·배치·경기를 둔다
-void selfplay(const Net &net, int games, int sims, unsigned long long seed, int temp_moves, double lam,
-		std::vector<Rec> &out, GenStats &st, int fast_sims = 0, double full_frac = 1.0, double rand_draft_frac = 0.0);
-
 // 컵 경기처럼 정해진 선수단 — 유망주 0~5명 · 나머지 서로 다른 직업 · 선수 스탯 0~3 (학습에 섞는다)
 void random_lineup(State &s, int team, unsigned long long r);
 

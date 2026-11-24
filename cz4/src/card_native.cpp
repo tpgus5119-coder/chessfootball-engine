@@ -58,7 +58,6 @@ void CardNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_tac_slider", "tac", "i", "v"), &CardNative::set_tac_slider);
 	ClassDB::bind_method(D_METHOD("duel_start", "viewer_team"), &CardNative::duel_start);
 	ClassDB::bind_method(D_METHOD("duel_end"), &CardNative::duel_end);
-	ClassDB::bind_method(D_METHOD("duel_set_viewer", "team"), &CardNative::duel_set_viewer);
 	ClassDB::bind_method(D_METHOD("duel_info"), &CardNative::duel_info);
 	ClassDB::bind_method(D_METHOD("state_hash"), &CardNative::state_hash);
 }

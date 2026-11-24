@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: build
-        run: c++ -O3 -std=c++17 -march=native -ffp-contract=off cz4/tools/gen3.cpp cz4/src/card.cpp cz4/src/card_az.cpp cz4/src/card_duel.cpp cz4/src/engine.cpp cz4/src/nnue.cpp -o gen3
+        run: c++ -O3 -std=c++17 -march=native -ffp-contract=off cz4/tools/gen3.cpp cz4/src/card.cpp cz4/src/card_az.cpp cz4/src/card_duel.cpp -o gen3
       - name: champion
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,7 +67,7 @@ jobs:
           merge-multiple: true
       - name: pack
         run: |
-          RULES=$(cat cz4/src/card.cpp cz4/src/card.h cz4/src/card_az.cpp cz4/src/card_az.h cz4/src/card_duel.cpp cz4/src/card_duel.h cz4/src/engine.cpp cz4/src/engine.h cz4/src/nnue.cpp cz4/src/nnue.h | sha256sum | cut -c1-10)
+          RULES=$(cat cz4/src/card.cpp cz4/src/card.h cz4/src/card_az.cpp cz4/src/card_az.h cz4/src/card_duel.cpp cz4/src/card_duel.h cz4/src/engine.h | sha256sum | cut -c1-10)
           echo "RULES=$RULES" >> $GITHUB_ENV
           cat recs/*.bin | xz -6 -T0 > recs4-${{ github.run_id }}-$RULES.bin.xz
           ls -la recs4-*.bin.xz
