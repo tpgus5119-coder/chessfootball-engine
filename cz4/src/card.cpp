@@ -22,7 +22,13 @@ int pool_slot(int position) {
 	return -1;
 }
 
+static thread_local unsigned g_met = 0;
+static thread_local int g_own0 = -1;   // 수 전 공 임자·자리 (월 곁 태클이 「새로 붙음」을 가린다)
+static thread_local V2 g_pos0[PLAYERS];   // 이 수에서 이미 겨룬 선수(uid 비트) — 월 곁 태클이 같은 수에서 두 번 겨루지 않게
+
 static void emit(const Event &e) {
+	if (e.kind == 0 && e.a >= 0 && e.b >= 0)
+		g_met |= (1u << e.a) | (1u << e.b);
 	if (g_events)
 		g_events->push_back(e);
 }
@@ -450,7 +456,11 @@ static void refresh_if_stuck(State &s) {
 	end_turn(s);
 }
 
+static void wall_tackle(State &s);
+
 static void after_action(State &s, int actor) {
+	wall_sync(s);   // 수가 끝나면 월은 다시 선다 — 그때 공 가진 적이 곁에 새로 붙어 있으면 태클
+	wall_tackle(s);
 	const int r0 = s.role[actor];
 	sync_roles(s);
 	if (r0 == R_ATK && s.role[actor] == R_DEF && s.phase == PLAY && s.turn_team == actor) {
@@ -1103,6 +1113,26 @@ static bool do_stance(State &s, int uid, V2 dest) {
 	return true;
 }
 
+// 월 곁 태클 (사용자 11-24): 공 가진 적이 월 곁(사방 4칸)에 새로 붙으면 — 태세 건 채 다가가 붙은 것과 같은 판정(힘 = 월 태세 · 동점 = 공 임자).
+// 이 수에서 이미 겨룬 월(존 경합·태클)은 안 함(수비수마다 한 번) · 붙음 = 같은 공 임자가 공을 들고 움직였거나 월이 밀려 와 곁이 됨
+// (패스를 받거나 뺏어 새로 공을 쥔 것은 붙은 게 아님 — 보통 태세와 같음)
+static void wall_tackle(State &s) {
+	if (s.phase != PLAY)
+		return;
+	for (const Player &w : s.players) {
+		if (s.ball_owner == -1)
+			return;
+		if (w.position != WALL || !tackle_ready(s, w) || (g_met >> w.uid & 1u))
+			continue;
+		const int o = s.ball_owner;
+		if (o != g_own0 || (s.players[o].pos == g_pos0[o] && w.pos == g_pos0[w.uid]))
+			continue;
+		tackle_do(s, w.uid, w.stance);
+		if (s.ball_owner == w.uid)
+			wall_sync(s);   // 뺏은 월 = 공을 쥐어 태세 없음
+	}
+}
+
 static bool keep_target(const State &s) {   // 우리 키퍼가 찰 곳이 하나라도 있나
 	for (const Player &q : s.players)
 		if (keep_ok(s, q))
@@ -1137,6 +1167,10 @@ bool apply_action(State &s, const Action &a) {
 	const bool u = a.uid >= 0 && a.uid < PLAYERS;
 	const bool strong = (a.t == A_STANCE && u && s.ball_owner == a.uid) || a.t == A_SAVE;   // 「강하게」 모으기는 행동으로 안 센다
 	const int team = s.turn_team;
+	g_own0 = s.ball_owner;
+	for (int i = 0; i < PLAYERS; i++)
+		g_pos0[i] = s.players[i].pos;
+	g_met = 0;
 	if (!apply_one(s, a))
 		return false;
 	if (!strong && u && a.t != A_PLACE && s.players[a.uid].team == team && s.turn_team == team)
