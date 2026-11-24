@@ -1,10 +1,10 @@
-// 감독 모드 자가학습 기보 공장 (11-19 판 4 — 카드 없음 · 4대4). flat(card_az Gumbel) 망이 자가대전하고 az::Rec 로 남긴다 (tools/az/train.py CF_MODE=card)
+// 감독 모드 자가학습 기보 공장 — 망(card_az Gumbel 탐색)이 자가대전하고 az::Rec 로 남긴다 (tools/az/train.py CF_MODE=card · loopf.py 가 부른다)
 //   gen3 <출력> <판수> <풀탐색> <빠른탐색> <풀 비율> <시드> <flat:망|flat:-> [flat:상대망 리그비율]
 //     flat:- = 망 없음 (손평가 가치 탐색 — 첫 바퀴)
 //     상대 망 + 리그 비율 = 그 비율의 판은 배우는 쪽(무작위 한 팀)만 이 망, 상대는 상대 망 — 배우는 쪽 수만 남긴다
-//   규칙: 4대4 · 직업 스킬 패시브(sk_passive) · 75 % 무작위 선수단(8직업·커리어 스탯 — 만능 없음 11-21)
-//   점수: 리그 판 = 승 +1 · 무 0 · 패 −1 · 토너먼트 판(CF_KO 비율, 기본 0.5) = 비기면 연장(차례 제한 없는 골든골)까지 같은 판에서 둔 승패 · 판 안전 상한(guard)에 걸리면 비김으로 기록
-//   학습 방법: 위아래 뒤집기 CF_FLIP(기본 0.5) · 판 중간 시작 CF_BRANCH(기본 0.15) · 앞 12수 온도 표본 · λ CF_LAMBDA 0.7 · 보조 머리(공 얻음·잃음·골)
+//   판: 75 % 무작위 선수단(커리어 꼴 — random_lineup) · 25 % 전원 신입생
+//   점수: 리그 판 = 승 +1 · 무 0 · 패 −1 · 토너먼트 판(CF_KO 비율, 기본 0.5) = 비기면 연장까지 같은 판에서 둔 승패 · 연장이 정규 길이만큼 더 가면 비김으로 기록
+//   학습 방법: 위아래 뒤집기 절반 · 판 중간 시작 CF_BRANCH(기본 0.15) · 앞 12수 정책 표본 · 가치 목표 λ 0.7 · 보조 목표(공 얻음·잃음·골)
 //   stderr 끝 줄 #gen3 …
 #include "../src/card_az.h"
 #include "flip.h"
@@ -36,7 +36,7 @@ struct Rng {
 
 double envf(const char *k, double d) { return getenv(k) ? atof(getenv(k)) : d; }
 
-// flat 자가대전 기록 (11-19 — 3단계 「누가」 결함을 피해 옛 7단 flat 구조로 이어 배운다): gen.cpp fill_rec0 와 같은 az::Rec
+// 한 국면 기록: 망 입력 + 개선 정책 상위 PI_K 수 (풀탐색 국면만 — 빠른 탐색 국면은 가치만)
 void fill_flat(az::Rec &rec, const State &s0, const std::vector<Action> &acts0, const std::vector<float> &pol, bool use_pi, bool flip) {
 	State s = s0;
 	std::vector<Action> acts = acts0;
@@ -78,8 +78,6 @@ struct Snap {
 } // namespace
 
 int main(int argc, char **argv) {
-	knobs_from_env();
-	az::aux_from_env();
 	if (argc < 8 || strncmp(argv[7], "flat:", 5) != 0) {
 		fprintf(stderr, "gen3 <출력> <판수> <풀탐색> <빠른탐색> <풀비율> <시드> <flat:망|flat:-> [flat:상대망 리그비율]\n");
 		return 1;
@@ -101,9 +99,8 @@ int main(int argc, char **argv) {
 		}
 		league_frac = atof(argv[9]);
 	}
-	const double ko_frac = envf("CF_KO", 0.5), flip_frac = envf("CF_FLIP", 0.5), branch_frac = envf("CF_BRANCH", 0.15);
-	const double lam = envf("CF_LAMBDA", 0.7);
-	const double miss_v = envf("CF_BRANCH_MISS", 1.0);
+	const double ko_frac = envf("CF_KO", 0.5), branch_frac = envf("CF_BRANCH", 0.15);
+	constexpr double FLIP = 0.5, LAMBDA = 0.7, MISS_V = 1.0;   // 뒤집기 몫 · 가치 목표 λ · 「가치가 크게 틀림」 문턱
 	std::vector<az::Rec> fout;
 	long long snap_n[3] = {}, br_games = 0, br_kind[3] = {};
 	long long moves = 0, nodes = 0, goals = 0, shots = 0, ots = 0, ko_games = 0, lg_games = 0, lg_win = 0, lg_loss = 0, flipped = 0;
@@ -127,8 +124,7 @@ int main(int argc, char **argv) {
 		}
 		State s;
 		new_match(s, AWAY);
-		s.sk_passive = 1;
-		if (rng.unit() < 0.75)   // 11-20 사용자 「구성 넓혀라」 35 → 75 % (나머지 25 % = 전원 신입생, 커리어 첫 경기 꼴)
+		if (rng.unit() < 0.75)   // 나머지 25 % = 전원 신입생 (커리어 첫 경기 꼴)
 			for (int t = 0; t < 2; t++)
 				az::random_lineup(s, t, rng.next());
 		s.knockout = ko;
@@ -146,12 +142,12 @@ int main(int argc, char **argv) {
 		std::vector<State> hist;
 		int guard = 0, ply = 0;
 		const uint32_t gid = uint32_t(seed * 100003ull + g);
-		while (s.phase != GAME_OVER && guard++ < 8000 && s.half_turn() < 2 * g_half_turns) {
+		while (s.phase != GAME_OVER && guard++ < 8000 && s.turn_count < 2 * CARD_HALF_TURNS) {   // 연장은 학습 기보에서 정규 길이만큼까지 (끝없는 연장 판이 바퀴를 늘림 · 게임 규칙은 제한 없음)
 			const bool full = rng.unit() < full_frac;
 			const int sims = full ? full_sims : fast_sims;
 			const bool mine = !vs_league || s.turn_team == learner;
 			az::Params p;
-			p.sims = sims, p.seed = rng.next(), p.dirichlet_eps = mine ? 0.25 : 0.0, p.top_m = full && getenv("CF_TOP_M") ? atoi(getenv("CF_TOP_M")) : 16;
+			p.sims = sims, p.seed = rng.next(), p.dirichlet_eps = mine ? 0.25 : 0.0, p.top_m = 16;
 			az::Result r = az::search(s, mine ? fnet : fonet, p);
 			if (!r.found) {
 				end_turn(s);
@@ -167,7 +163,7 @@ int main(int argc, char **argv) {
 					}
 			}
 			if (mine) {
-				const bool fl = rf.unit() < flip_frac;
+				const bool fl = rf.unit() < FLIP;
 				az::Rec frec;
 				fill_flat(frec, s, r.acts, r.policy, full, fl);
 				frec.q = r.root_v;
@@ -185,7 +181,7 @@ int main(int argc, char **argv) {
 			const int b0 = s.phase == cf::PLAY ? s.ball_team() : -1, gh0 = s.goals[HOME], ga0 = s.goals[AWAY];
 			apply_action(s, a);
 			ply++;
-			const bool scored = s.goals[HOME] != gh0 || s.goals[AWAY] != ga0;   // 11-21 골문 체력·막힘 없음
+			const bool scored = s.goals[HOME] != gh0 || s.goals[AWAY] != ga0;
 			int gain = -1;
 			float mag = 0.5f;
 			if (scored)
@@ -209,7 +205,7 @@ int main(int argc, char **argv) {
 			if (!scored && gain >= 0 && mag == 0.5f && s.phase == cf::PLAY)
 				keep(s, 2);
 		}
-		const int win = s.phase == GAME_OVER ? s.winner : -1;   // 녹아웃 = 연장 골든골 (11-24 일기토 없앰) · 상한(guard)에 걸려 안 끝난 판은 비김
+		const int win = s.phase == GAME_OVER ? s.winner : -1;   // 상한에 걸려 안 끝난 판은 비김
 		ots += s.ot;
 		(win == HOME ? home : win == AWAY ? away : draws)++;
 		if (vs_league)
@@ -220,8 +216,8 @@ int main(int argc, char **argv) {
 			const int me = mover[i];
 			double z = win == -1 ? 0.0 : (win == me ? 1.0 : -1.0);
 			az::Rec &r = fout[r0 + i];
-			r.z = float(lam * z + (1.0 - lam) * r.q), r.aux = trk[i];
-			if (std::fabs(qv[i] - z) > miss_v && hist[i].phase == cf::PLAY && rb.next() % (unsigned long long)(++snap_n[0]) == 0)
+			r.z = float(LAMBDA * z + (1.0 - LAMBDA) * r.q), r.aux = trk[i];
+			if (std::fabs(qv[i] - z) > MISS_V && hist[i].phase == cf::PLAY && rb.next() % (unsigned long long)(++snap_n[0]) == 0)
 				pool[0][0] = Snap{ hist[i], 0 };
 		}
 	}

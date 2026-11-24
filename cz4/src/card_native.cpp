@@ -1,31 +1,26 @@
 #include "card_native.h"
 
+#include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/vector2i.hpp>
+
+#include <cmath>
 #include <cstring>
 #include <type_traits>
-#include "card_tactic.h"
-#include "card_hash.h"
 
-#include <godot_cpp/core/class_db.hpp>
-#include <algorithm>
-#include <cmath>
-#include <godot_cpp/variant/vector2i.hpp>
+#include "card_hash.h"
+#include "card_tactic.h"
 
 using namespace godot;
 namespace ck = cf::card;
 
 static ck::az::Net g_card_net;   // 프로세스에 망 하나
-// 화면과 주고받는 수: [종류, uid, x, y, 다섯째] 5칸 — 다섯째 = 옛 스킬 칸(늘 0 — 11-19 직업 능력 상시)
-static ck::Action dec_action(int t, int uid, int dx, int dy, int x5) {
-	ck::Action a{ t, uid, { dx, dy }, -1 };
-	a.sk = std::max(0, std::min(ck::SK_KINDS_MAX, x5));
-	return a;
-}
+// 화면과 주고받는 수: [종류, uid, x, y, 다섯째] 5칸 — 다섯째 = 옛 스킬 칸(늘 0 · 0 아닌 수는 거절)
 static void put_action(PackedInt32Array &out, const ck::Action &a) {
 	out.push_back(a.t);
 	out.push_back(a.uid);
 	out.push_back(a.dest.x);
 	out.push_back(a.dest.y);
-	out.push_back(a.sk);
+	out.push_back(0);
 }
 
 void CardNative::_bind_methods() {
@@ -77,7 +72,7 @@ void CardNative::set_perks(int team, PackedInt32Array hold_up) {
 	ck::set_perks(state, team, h);
 }
 
-// 시험판 (11-18 혼자하기): 팀 인원 · 직업 스킬 패시브 — new_match 바로 뒤
+// 시험판 (혼자하기): 팀 필드 인원 — new_match 바로 뒤
 void CardNative::set_trial(int team_n) { ck::set_trial(state, team_n); }
 
 void CardNative::set_lineup(int team, PackedInt32Array positions, PackedInt32Array bonus, int gk) {
@@ -103,7 +98,6 @@ static Array to_events(const std::vector<ck::Event> &ev) {
 		d["va"] = e.va;
 		d["vb"] = e.vb;
 		d["win"] = e.win;
-		d["vc"] = e.vc;   // 슛: 데미지 힘 (v17)
 		Array p;
 		for (const cf::V2 &t : e.path)
 			p.push_back(Vector2i(t.x, t.y));
@@ -124,12 +118,12 @@ Dictionary CardNative::get_state() const {
 	d["ball_owner"] = s.ball_owner;
 	d["pts"] = s.pts;
 	d["turn_count"] = s.turn_count;
-	d["half_turn"] = s.half_turn();
+	d["half_turn"] = s.turn_count;   // 화면 이름 그대로 (전후반 없음 — 경기 차례 수)
 	d["knockout"] = s.knockout;   // 단판 토너먼트 (비기면 연장)
 	d["ot"] = s.ot;               // 1 = 연장 중 (차례 제한 없는 골든골 — 남은 차례 없음)
 	d["winner"] = s.winner;
-	d["half"] = s.half;
-	d["hold"] = eff_hold(s);
+	d["half"] = 1;   // 화면 호환 (전후반 없음)
+	d["hold"] = s.hold;
 	d["touch_team"] = s.touch_team;
 	d["touch_mask"] = s.touch_mask;
 	d["redeploy"] = s.redeploy;
@@ -152,12 +146,12 @@ Dictionary CardNative::get_state() const {
 		gkick.push_back(s.gk_kick[t]);
 		grange.push_back(s.gk_range[t]);
 	}
-	d["ghp_max"] = gmax;
-	d["gk"] = Array::make(s.gk[0], s.gk[1]);   // 골키퍼 uid [홈, 원정] (11-24 셋째 — 판 위 선수)
-	d["gk_in"] = Array::make(s.gk_in(0), s.gk_in(1));   // 골키퍼가 골대 안 (밖이면 골대 체력 0)   // 골키퍼 디펜스 = 체력 최대 [홈, 원정] (11-24 팀마다)
+	d["ghp_max"] = gmax;   // 골키퍼 디펜스 = 체력 최대 [홈, 원정]
+	d["gk"] = Array::make(s.gk[0], s.gk[1]);   // 골키퍼 uid [홈, 원정]
+	d["gk_in"] = Array::make(s.gk_in(0), s.gk_in(1));   // 골키퍼가 골대 안 (밖이면 골대 체력 0)
 	d["gk_kick"] = gkick;
 	d["gk_range"] = grange;
-	d["keeper"] = s.keeper;   // 슛을 막은 키퍼가 공을 쥔 팀 (−1 = 없음) — 화면의 키퍼 롱킥 차례 표시 (11-23)
+	d["keeper"] = s.keeper;   // 슛을 막은 키퍼가 공을 쥔 팀 (−1 = 없음) — 화면의 키퍼 롱킥 차례 표시
 	d["role"] = role;
 	Array ps;
 	for (const ck::Player &p : s.players) {
@@ -165,31 +159,23 @@ Dictionary CardNative::get_state() const {
 		q["uid"] = p.uid;
 		q["team"] = p.team;
 		q["position"] = p.position;
-		q["charge"] = p.charge;   // 「강하게」 모음 2 (11-22 셋째)
-		q["bonus"] = Array::make(p.bonus[0], p.bonus[1], p.bonus[2], p.bonus[3]);   // 컵 선수 스탯 슛·패스·드리블·수비
+		q["charge"] = p.charge;   // 「강하게」 모음 2
+		q["bonus"] = Array::make(p.bonus[0], p.bonus[1], p.bonus[2], p.bonus[3]);   // 성장 슛·패스·무브·디펜스
 		q["pos"] = Vector2i(p.pos.x, p.pos.y);
 		q["placed_order"] = p.placed_order;
 		q["stance"] = p.stance;
 		q["stance_left"] = p.stance_left;
-		{   // 존 칸 (11-21 방향 존 — 공개): 곁 한 칸 · 월은 사방
-			cf::V2 z[4];
-			const int nz = ck::zone_tiles(p, z);
-			Array za;
-			for (int k = 0; k < nz; k++)
-				za.push_back(Vector2i(z[k].x, z[k].y));
-			q["zone"] = za;
-			q["zone_dir"] = p.stance > 0 ? 4 : -1;   // 늘 사방 (11-24 — 옛 방향 존 자리, 화면 호환 · 4 = 사방)
-		}
-		q["skill_job"] = false;   // 직업 능력 상시 (11-19) — 켜는 단추 없음
-		q["skill_can"] = ck::skill_can(s, p);
-		{
-			Array r;
-			for (int k = 0; k < ck::CARD_POOL_N; k++)
-				r.push_back(s.rep[p.uid][k]);
-			q["rep"] = r;
-		}
-		q["fired"] = s.fired[p.uid];
-		q["acted"] = p.acted;   // 이번 차례에 행동함 (11-22 한 선수 행동 하나)
+		cf::V2 z[4];
+		const int nz = ck::zone_tiles(p, z);
+		Array za;
+		for (int k = 0; k < nz; k++)
+			za.push_back(Vector2i(z[k].x, z[k].y));
+		q["zone"] = za;   // 존 칸 (곁 네 칸)
+		Array r;
+		for (int k = 0; k < ck::CARD_POOL_N; k++)
+			r.push_back(s.rep[p.uid][k]);
+		q["rep"] = r;
+		q["acted"] = p.acted;   // 이번 차례에 행동함
 		q["move_stat"] = ck::move_stat(p);   // 이동 수치 (= 버티는 힘)
 		q["marked"] = ck::marked(s, p);
 		ps.push_back(q);
@@ -220,7 +206,11 @@ bool CardNative::apply(int t, int uid, int dx, int dy, int sk, const Array &path
 		Vector2i v = path[i];
 		drawn.push_back({ v.x, v.y });
 	}
-	ck::Action a = dec_action(t, uid, dx, dy, sk);
+	if (sk > 0) {   // 옛 스킬 수 — 없다
+		last_events.clear();
+		return false;
+	}
+	const ck::Action a{ t, uid, { dx, dy } };
 	pick_path(state, a, drawn);
 	ck::g_events = &ev;
 	ck::g_path = drawn.empty() ? nullptr : &drawn;
@@ -239,7 +229,9 @@ Array CardNative::preview(int t, int uid, int dx, int dy, int sk, const Array &p
 		Vector2i v = path[i];
 		drawn.push_back({ v.x, v.y });
 	}
-	ck::Action a = dec_action(t, uid, dx, dy, sk);
+	if (sk > 0)
+		return Array();
+	const ck::Action a{ t, uid, { dx, dy } };
 	pick_path(c, a, drawn);
 	ck::g_events = &ev;
 	ck::g_path = drawn.empty() ? nullptr : &drawn;
@@ -254,21 +246,20 @@ void CardNative::force_end_turn() {
 	ck::end_turn(state);
 }
 
-// 그 선수의 범위 (want 0 킥 · 1 이동) — sk = 직업 스킬을 켰을 때 (엔진이 거르는 범위와 같다)
+// 그 선수의 범위 (want 0 패스 · 1 이동 · 3 슛 — 엔진이 거르는 범위와 같다) · sk = 옛 스킬 칸 (안 씀)
 int CardNative::act_range(int uid, int want, int sk) const {
+	(void)sk;
 	if (uid < 0 || uid >= cf::PLAYERS)
 		return 0;
-	return ck::act_range(state, state.players[uid], want == 0 ? ck::C_KICK : want == 3 ? ck::C_SHOT : ck::C_MOVE, sk);   // 3 = 슛 범위 (11-22 중거리 슈터)
+	return ck::act_range(state, state.players[uid], want == 0 ? ck::C_KICK : want == 3 ? ck::C_SHOT : ck::C_MOVE);
 }
 
-// 그 선수의 판정 힘 (use = card.h Use: 0 패스 · 1 슛 · 2 이동 · 3 드리블 · 4 태세 · dist = 킥 거리)
+// 그 선수의 판정 힘 (use = card.h Use: 0 패스 · 1 슛 · 2 이동 · 3 드리블 · 4 태세 · dist = 킥 거리) · sk = 옛 스킬 칸 (안 씀)
 int CardNative::act_power(int uid, int use, int dist, int sk) const {
+	(void)sk;
 	if (uid < 0 || uid >= cf::PLAYERS)
 		return 0;
-	ck::State c = state;
-	c.sk_uid = sk ? uid : -1;
-	c.sk_kind = sk;
-	return ck::act_power(c, c.players[uid], use, dist);
+	return ck::act_power(state, state.players[uid], use, dist);
 }
 
 
@@ -276,7 +267,7 @@ bool CardNative::ai_load(const PackedByteArray &bytes) { return g_card_net.load_
 
 bool CardNative::ai_ready() const { return g_card_net.loaded(); }
 
-// 선발 AI 고르기 (사용자 2026-11-04 「겹쳐도 된다. 다만 완전 따라서 선발하지 말라」) — 규칙은 그대로, AI 고르는 법만:
+// 드래프트 AI 고르기 (겹쳐도 되지만 상대를 완전히 따라 고르지는 않게) — 규칙은 그대로, AI 고르는 법만:
 // 늘 같은 다섯을 고르던 것(탐색 1등만 집음)을 탐색 확률대로 뽑아 섞고, 상대가 고른 포지션과는 둘까지만 겹친다
 static ck::Action draft_vary(const ck::State &s, const ck::az::Result &r, unsigned long long seed) {
 	int team = s.turn_team;
@@ -323,7 +314,7 @@ void CardNative::ai_style(int team, float poss, float ctr, float press, float ho
 	style.hold = hold;
 }
 
-void CardNative::ai_tactic(int team, int tac) {   // 전술 대본 (11-22, card_tactic.cpp): tac 0 게겐 · 1 티키 · 2 카테 · −1 끔 — 덤(ai_style)과 같은 팀에 건다
+void CardNative::ai_tactic(int team, int tac) {   // 전술 대본 (card_tactic.cpp): tac 0 게겐 · 1 티키 · 2 카테 · −1 끔 — 덤(ai_style)과 같은 팀에 건다
 	style_team = team;
 	style.tac = tac >= 0 && tac < ck::az::TAC_N ? tac : -1;
 	style.eps = style.tac >= 0 ? ck::az::tac_eps(style.tac) : 0.0f;
@@ -336,7 +327,7 @@ void CardNative::set_tac_slider(int tac, int i, float v) {
 		style.eps = ck::az::tac_eps(tac);
 }
 
-// exclude_uid >= 0 (선수 모드 동료 — 11-22 사용자 「선수 모드도 망 AI」): 그 선수(유저)의 수는 두지 않는다 —
+// exclude_uid >= 0 (선수 모드 동료): 그 선수(유저)의 수는 두지 않는다 —
 // 탐색 결과가 그 선수 수면 개선 정책이 가장 높은 「다른 선수」 수를 고른다 (같은 탐색 · 같은 망)
 PackedInt32Array CardNative::ai_pick(int sims, int seed, int exclude_uid) const {
 	ck::az::Params p;
@@ -344,7 +335,7 @@ PackedInt32Array CardNative::ai_pick(int sims, int seed, int exclude_uid) const 
 	p.seed = (unsigned long long)seed;
 	p.gumbel = false;
 	if (!g_card_net.loaded())
-		p.top_m = 1 << 20;   // 망 없음(손평가): 수 점수가 모두 0 이라 상위 16 = 목록 앞 16개(첫 선수 이동)뿐이던 것 — 뿌리 수를 모두 본다 (docs/자가학습_감사_1119.md)
+		p.top_m = 1 << 20;   // 망 없음(손평가): 수 점수가 모두 0 이라 상위 16 = 목록 앞 16개뿐 — 뿌리 수를 모두 본다
 	p.style_team = style_team;
 	p.style = style;
 	PackedInt32Array out;
@@ -368,6 +359,7 @@ PackedInt32Array CardNative::ai_pick(int sims, int seed, int exclude_uid) const 
 
 
 static_assert(std::is_trivially_copyable<ck::State>::value, "자동 저장은 State 를 바이트로 옮긴다");
+static_assert(std::has_unique_object_representations_v<ck::State>, "State 에 채움 바이트가 없어야 한다 (탐색이 바이트로 견준다)");
 static constexpr uint32_t SAVE_MAGIC = 0x53564331u;   // "1CVS" — State 꼴이 바뀌면 크기로 걸러진다
 
 PackedByteArray CardNative::save_state() const {
@@ -395,7 +387,7 @@ int CardNative::state_hash() const {
 	return int(ck::state_hash(state));
 }
 
-// 개발용 판 짜기 (ui/_shot_pair_set.gd — 본편과 같은 배치로 대조 촬영). 규칙 판단은 하지 않는다 — 놓기만 한다
+// 개발·시험용 판 짜기 (촬영·tests). 규칙 판단은 하지 않는다 — 놓기만 한다
 void CardNative::dev_set(int uid, int x, int y, int stance) {
 	ck::State &s = state;
 	if (uid < 0 || uid >= cf::PLAYERS)
@@ -405,7 +397,7 @@ void CardNative::dev_set(int uid, int x, int y, int stance) {
 		s.players[uid].placed_order = uid;
 	s.players[uid].stance = stance;
 	s.players[uid].stance_left = stance > 0 ? 1 : 0;
-	s.players[uid].acted = 0;   // 앞 국면의 「행동함」(11-22 한 선수 행동 하나)·「강하게」도
+	s.players[uid].acted = 0;   // 앞 국면의 「행동함」·「강하게」도
 	s.players[uid].charge = 0;
 }
 
@@ -414,7 +406,7 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 	s.phase = cf::PLAY;
 	s.turn_team = turn_team;
 	s.pts = cf::POINTS_PER_TURN;
-	(void)x, (void)y;   // 옛 루즈볼 칸 자리 (11-24 셋째 스루패스 없앰 — 루즈볼 없음)
+	(void)x, (void)y;   // 옛 루즈볼 칸 자리 (화면 호환 — 안 씀)
 	s.ball_owner = owner;
 	const int bt = s.ball_team();
 	for (int t = 0; t < 2; t++)
@@ -434,7 +426,7 @@ PackedInt32Array CardNative::keeper_stats(int position, PackedInt32Array bonus) 
 	return r;
 }
 
-void CardNative::dev_ghp(int team, int hp) {   // 개발·시험용 — 골키퍼 남은 체력 놓기 (11-23)
+void CardNative::dev_ghp(int team, int hp) {   // 개발·시험용 — 골대 남은 체력 놓기
 	if (team == 0 || team == 1)
 		state.ghp[team] = hp;
 }

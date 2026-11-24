@@ -4,7 +4,6 @@
 // 대본 점수가 높은 수 넷은 꼭 탐색 · 값이 최선 − ε 안인 수 중 점수가 가장 높은 수를 둔다 · 이기는 쪽 슛은 가로채지 않는다(보이면 슛).
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 
 #include "card_az.h"
 #include "card_tactic.h"
@@ -77,7 +76,7 @@ struct Init {
 	Init() { set_roles(); }
 } init_roles;
 
-inline int depth(int team, V2 t) { return team == HOME ? t.x : W - 1 - t.x; }   // 우리 골대 쪽 끝 0 → 상대 끝 9
+inline int depth(int team, V2 t) { return team == HOME ? t.x : W - 1 - t.x; }   // 우리 골대 쪽 끝 0 → 상대 끝 W − 1
 inline bool wide(V2 t) { return t.y <= 1 || t.y >= H - 2; }
 inline int zone_gap(int d, int lo, int hi) { return d < lo ? lo - d : (d > hi ? d - hi : 0); }
 const Role &role_of(int tac, const Player &p) { return p.position >= 0 && p.position < JOB_N ? ROLE[tac][p.position] : MID; }

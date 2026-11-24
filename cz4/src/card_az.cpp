@@ -93,8 +93,8 @@ void net_input(const State &s, int team, NetInput &in) {
 	float *d = in.dense;
 	d[0] = s.phase == PLACEMENT;
 	d[1] = s.phase == PLAY;
-	d[2] = float(eff_hold(s)) / 5.0f;
-	d[3] = g_time_input ? float(std::max(0, std::min(s.half_turn(), g_half_turns))) / float(g_half_turns) : 0.0f;   // 연장(골든골)은 1 그대로
+	d[2] = float(s.hold) / 5.0f;
+	d[3] = float(std::max(0, std::min(s.turn_count, CARD_HALF_TURNS))) / float(CARD_HALF_TURNS);   // 연장(골든골)은 1 그대로
 	d[4] = float(s.goals[team]) / 2.0f;
 	d[5] = float(s.goals[opp]) / 2.0f;
 	d[6] = float(s.pts) / float(POINTS_PER_TURN);
@@ -107,21 +107,19 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[13] = float(std::max(-3.0, std::min(3.0, heuristic(s, team))) / 3.0);
 	d[14] = float(s.ghp[team]) / 5.0f;   // 골키퍼 남은 체력 — 우리 · 상대
 	d[15] = float(s.ghp[opp]) / 5.0f;
-	d[16] = float(s.gk_range[team]) / 6.0f;   // 골키퍼 킥 범위 — 우리 · 상대 (킥 힘은 늘 4 라 입력 없음)
+	d[16] = float(s.gk_range[team]) / 6.0f;   // 골키퍼 롱킥 범위 — 우리 · 상대
 	d[17] = float(s.gk_range[opp]) / 6.0f;
 	d[18] = s.keeper == team;   // 키퍼가 공을 쥔 팀 — 우리 · 상대
 	d[19] = s.keeper == opp;
-	d[20] = s.ot;          // 연장(골든골) 중 (11-24 둘째 사용자 「연장 중인지 AI 망 입력에」)
+	d[20] = s.ot;          // 연장(골든골) 중
 	d[21] = s.knockout;    // 토너먼트(단판 — 비기면 연장) · 리그는 0
-	d[22] = s.gk_in(team);   // 골키퍼가 골대 안 (11-24 셋째 — 밖이면 골대 체력 0) — 우리 · 상대
+	d[22] = s.gk_in(team);   // 골키퍼가 골대 안 (밖이면 골대 체력 0) — 우리 · 상대
 	d[23] = s.gk_in(opp);
-	d[24] = float(s.gk_kick[team]) / 6.0f;   // 키퍼 롱킥 힘 — 우리 · 상대 (11-24 셋째 사용자)
+	d[24] = float(s.gk_kick[team]) / 6.0f;   // 키퍼 롱킥 힘 — 우리 · 상대
 	d[25] = float(s.gk_kick[opp]) / 6.0f;
 }
 
 int action_index(const State &s, const Action &a) {
-	if (a.sk)
-		return -1;   // 스킬 수는 11-19 부터 없다
 	const int team = s.turn_team;
 	const int me = a.uid - PER_TEAM * team;   // 두는 팀 안 번호 (배치는 uid = 드래프트 슬롯)
 	const bool mine = me >= 0 && me < PER_TEAM;
@@ -139,7 +137,7 @@ int action_index(const State &s, const Action &a) {
 		}
 		case A_SHOT:
 			return mine ? OFF_SHOT + me : -1;
-		case A_STANCE:   // 제자리 사방 태세 (11-24) · 공 임자 「강하게」 제자리 수는 번호 없음 (판 4 때부터 그대로)
+		case A_STANCE:   // 제자리 사방 태세 · 공 임자 「강하게」 모으기 수는 번호 없음
 			return mine && s.ball_owner != a.uid && a.dest == s.players[a.uid].pos ? OFF_STANCE_A + me : -1;
 		case A_PLACE: {
 			if (a.uid < 0 || a.uid > POOL_N || !in_bounds(a.dest))
@@ -147,7 +145,7 @@ int action_index(const State &s, const Action &a) {
 			const int p = g_tiles.place[flip_tile(a.dest, team)];
 			return p < 0 ? -1 : OFF_PLACE + a.uid * NPL + p;
 		}
-		case A_KEEP: {   // 키퍼 롱킥: 받는 아군(me) 발밑 (11-24 빈 칸 롱킥 없앰)
+		case A_KEEP: {   // 키퍼 롱킥: 받는 아군(me) 발밑
 			const int f = ftile(a.dest, team);
 			if (!mine || f < 0)
 				return -1;
@@ -163,7 +161,7 @@ int action_index(const State &s, const Action &a) {
 }
 
 struct Eval {
-	float v = 0.0f, aux = 0.0f;
+	float v = 0.0f;
 	std::vector<float> logits;
 };
 
@@ -319,13 +317,10 @@ static void evaluate(const Net &net, const State &s, const std::vector<Action> &
 	static thread_local std::vector<float> b;
 	forward(net, in, b);
 	const int h2 = net.h2;
-	float v = net.bv, ax = net.ba;
-	for (int k = 0; k < h2; k++) {
+	float v = net.bv;   // 보조 머리(wa·ba)는 학습 목표용 — 탐색엔 안 쓴다
+	for (int k = 0; k < h2; k++)
 		v += b[k] * net.wv[k];
-		ax += b[k] * net.wa[k];
-	}
 	out.v = std::tanh(v);
-	out.aux = std::tanh(ax);
 	for (size_t i = 0; i < acts.size(); i++) {
 		const int ai = action_index(s, acts[i]);
 		if (ai < 0 || ai >= net.na)
@@ -338,21 +333,9 @@ static void evaluate(const Net &net, const State &s, const std::vector<Action> &
 	}
 }
 
-double g_aux_w = 0.0;
-void aux_from_env() {
-	if (const char *e = getenv("CF_AUX_W"))
-		g_aux_w = atof(e);
-}
-
-static inline float with_aux(float v, double aux, double w) {   // w = 0 이면 v 그대로 (비트까지 같게 — 더하지 않는다)
-	if (w == 0.0)
-		return v;
-	return float(std::max(-1.0, std::min(1.0, double(v) + w * std::max(-1.0, std::min(1.0, aux)))));
-}
-
 float (*g_tac_score)(const State &s, const Action &a, const Style &st) = nullptr;
 
-// ---------- 팀 성격 덤 (11-12) ----------
+// ---------- 팀 성격 덤 ----------
 // 크기는 logit 단위 — 망 정책의 수 사이 logit 차가 보통 몇 단위라 덤 1 안팎은 「비슷한 수 중에서 고르는 버릇」 정도다 (값과 측정: ui/card_match.gd STYLE_W 설명)
 float style_bias(const State &s, const Action &a, const Style &st) {
 	if (s.phase != PLAY || a.uid < 0 || a.uid >= PLAYERS)
@@ -363,12 +346,11 @@ float style_bias(const State &s, const Action &a, const Style &st) {
 	if (p.team != team || p.pos == UNPLACED)
 		return 0.0f;
 	const V2 ball = s.ball_owner >= 0 ? s.players[s.ball_owner].pos : UNPLACED;
-	auto cheb = [](V2 x, V2 y) { return manhattan(x, y); };   // 거리 = 게임과 같은 맨해튼 (11-21 — 옛 체비쇼프는 대각 2칸 패스를 「짧은 패스」로 셌다)
 	const int gain = (a.dest.x - p.pos.x) * fwd;   // 앞으로 간 칸
 	float b = 0.0f;
 	if (s.ball_team() == team) {   // 공격
 		if (a.t == A_PASS) {
-			const int d = cheb(p.pos, a.dest);
+			const int d = manhattan(p.pos, a.dest);
 			b += st.poss * (d <= 2 ? 1.0f : 0.0f);                             // 지공: 짧은 패스 (긴 킥을 깎으면 슛 길이 막혀 약해짐 — 측정 11-12)
 			b += st.ctr * (d >= 3 ? 1.0f : -0.5f) + st.ctr * 0.25f * float(std::max(0, gain));   // 역습: 긴 킥·앞으로
 		} else if (a.t == A_DRIBBLE) {
@@ -378,7 +360,7 @@ float style_bias(const State &s, const Action &a, const Style &st) {
 		}
 	} else if (ball != UNPLACED) {   // 수비
 		if (a.t == A_MOVE) {
-			const int closer = cheb(p.pos, ball) - cheb(a.dest, ball);
+			const int closer = manhattan(p.pos, ball) - manhattan(a.dest, ball);
 			b += st.press * 0.5f * float(std::max(-2, std::min(3, closer)));     // 전방압박: 공 쪽으로
 			const bool own_now = is_own_half(team, p.pos), own_after = is_own_half(team, a.dest);
 			b += st.hold * (own_after ? (own_now ? 0.0f : 1.0f) : -1.0f);       // 지키는 수비: 자기 진영으로 · 넘어가지 않기
@@ -455,13 +437,12 @@ struct Tree {
 		if (s.phase == GAME_OVER || nd.acts.empty()) {
 			nd.terminal = true;
 			nd.mover = parent_mover < 0 ? s.turn_team : parent_mover;
-			nd.v = s.winner == -1 ? 0.0f : (s.winner == nd.mover ? 1.0f : -1.0f);   // 비김 = 0 (0:0 특수 처리 없앰, 사용자 11-18)
-			nd.v = with_aux(nd.v, double(s.goals[nd.mover] - s.goals[opponent(nd.mover)]) / 5.0, p.aux_w);   // 끝: 실제 골 차 / 5 (학습 aux 목표와 같은 식 · mover 관점 — 11-21 골 데미지 없음)
+			nd.v = s.winner == -1 ? 0.0f : (s.winner == nd.mover ? 1.0f : -1.0f);   // 비김 = 0
 		} else {
 			nd.mover = s.turn_team;
 			Eval e;
 			evaluate(net, s, nd.acts, e);
-			nd.v = with_aux(e.v, e.aux, p.aux_w);   // 망 v·aux 둘 다 s.turn_team(= mover) 관점
+			nd.v = e.v;   // s.turn_team(= mover) 관점
 			nd.logits = std::move(e.logits);
 			if (nd.mover == p.style_team && p.style.on())
 				for (size_t i = 0; i < nd.acts.size(); i++)
@@ -548,8 +529,6 @@ struct Tree {
 	}
 
 	// 뿌리의 수 a를 한 번 더 파고 내려간다. 돌려주는 값 = 뿌리 mover 관점
-	double leaf_turns = 0.0;   // 잎까지 차례 경계 합 (측정용)
-	int leaves = 0;
 	double simulate(int root, int a) {
 		std::vector<std::pair<int, int>> path;   // (마디, 자식 번호)
 		int cur = root;
@@ -577,11 +556,6 @@ struct Tree {
 			}
 			ai = pick_child(cn);
 		}
-		int tb = 0;
-		for (size_t i = 1; i < path.size(); i++)
-			tb += nodes[path[i].first].mover != nodes[path[i - 1].first].mover;
-		leaf_turns += tb + (leaf_mover != nodes[path.back().first].mover);
-		leaves++;
 		for (auto it = path.rbegin(); it != path.rend(); ++it) {
 			Node &nd = nodes[it->first];
 			double val = nd.mover == leaf_mover ? leaf : -leaf;
@@ -594,91 +568,13 @@ struct Tree {
 	}
 };
 
-struct ReuseImpl {
-	std::vector<Node> nodes;   // 뿌리 = 0
-};
-
-static bool same_state(const State &a, const State &b) {
-	return a.turn_count == b.turn_count && a.phase == b.phase && a.turn_team == b.turn_team && a.ball_owner == b.ball_owner &&
-			std::memcmp(&a, &b, sizeof(State)) == 0;
-}
-
-// 지난 나무에서 s0 와 같은 마디를 찾아 그 가지만 out 으로 옮긴다 (뿌리 = 0). 못 찾거나 상한을 넘으면 false
-static bool take_subtree(ReuseImpl &im, const State &s0, size_t cap, std::vector<Node> &out) {
-	if (im.nodes.empty())
-		return false;
-	int found = -1;
-	std::vector<int> cur { 0 }, nxt;
-	for (int d = 0; d <= 8 && found < 0 && !cur.empty(); d++) {
-		nxt.clear();
-		for (int i : cur) {
-			const Node &nd = im.nodes[size_t(i)];
-			if (!nd.terminal && same_state(nd.s, s0)) {
-				found = i;
-				break;
-			}
-			for (int c : nd.child)
-				if (c >= 0)
-					nxt.push_back(c);
-		}
-		cur.swap(nxt);
-	}
-	if (found < 0)
-		return false;
-	std::vector<int> order { found }, map(im.nodes.size(), -1);
-	map[size_t(found)] = 0;
-	for (size_t h = 0; h < order.size(); h++) {
-		if (order.size() > cap)
-			return false;
-		for (int c : im.nodes[size_t(order[h])].child)
-			if (c >= 0 && map[size_t(c)] < 0) {
-				map[size_t(c)] = int(order.size());
-				order.push_back(c);
-			}
-	}
-	out.clear();
-	out.reserve(order.size());
-	for (int i : order) {
-		out.push_back(std::move(im.nodes[size_t(i)]));
-		for (int &c : out.back().child)
-			if (c >= 0)
-				c = map[size_t(c)];
-	}
-	return true;
-}
-
 } // namespace
 
-Reuse::~Reuse() { delete static_cast<ReuseImpl *>(impl); }
-void Reuse::clear() {
-	if (impl)
-		static_cast<ReuseImpl *>(impl)->nodes.clear();
-	net = nullptr;
-}
-
-Result search(const State &s0, const Net &net, const Params &p) { return search(s0, net, p, nullptr); }
-
-Result search(const State &s0, const Net &net, const Params &p, Reuse *keep) {
+Result search(const State &s0, const Net &net, const Params &p) {
 	Result res;
 	Tree tree(net, p);
-	int root = -1;
-	if (keep) {
-		if (!keep->impl)
-			keep->impl = new ReuseImpl;
-		ReuseImpl &im = *static_cast<ReuseImpl *>(keep->impl);
-		const size_t cap = size_t(keep->cap > 0 ? keep->cap : std::max(4096, 8 * p.sims));
-		if (keep->net == &net && keep->aux_w == p.aux_w && keep->style_team == p.style_team && take_subtree(im, s0, cap, tree.nodes)) {
-			root = 0;
-			keep->hit++;
-			keep->kept += tree.nodes[0].N;
-		} else {
-			keep->miss++;
-		}
-		im.nodes.clear();
-	}
-	tree.nodes.reserve(tree.nodes.size() + size_t(p.sims) * 2 + 8);
-	if (root < 0)
-		root = tree.make(s0, -1);
+	tree.nodes.reserve(size_t(p.sims) * 2 + 8);
+	const int root = tree.make(s0, -1);
 	Node &r0 = tree.nodes[root];
 	res.acts = r0.acts;
 	if (r0.terminal || r0.acts.empty()) {
@@ -716,7 +612,7 @@ Result search(const State &s0, const Net &net, const Params &p, Reuse *keep) {
 	std::sort(cand.begin(), cand.end(), [&](int a, int b) { return g[a] + r0.logits[a] > g[b] + r0.logits[b]; });
 	int m = std::min<int>(p.top_m, int(k));
 	cand.resize(m);
-	std::vector<float> ts;   // 전술 대본 점수 (11-22) — 높은 수 넷은 꼭 탐색한다
+	std::vector<float> ts;   // 전술 대본 점수 — 높은 수 넷은 꼭 탐색한다
 	const bool tac = g_tac_score && p.style.tac >= 0 && r0.mover == p.style_team;
 	if (tac) {
 		ts.resize(k);
@@ -786,68 +682,15 @@ Result search(const State &s0, const Net &net, const Params &p, Reuse *keep) {
 		if (r.n[pick] >= nmin || pick == cand[0])
 			cand[0] = pick, res.action = r.acts[pick];
 	}
-	res.leaf_turns = float(tree.leaf_turns / std::max(1, tree.leaves));
-	for (int ci = r.child[cand[0]], prev = r.mover; ci >= 0;) {   // 주된 갈래: 뽑은 수 → 그다음은 가장 많이 간 자식
-		const Node &nd = tree.nodes[ci];
-		res.pv_plies++;
-		res.pv_turns += nd.mover != prev;
-		prev = nd.mover;
-		if (nd.terminal || nd.N == 0)
-			break;
-		ci = nd.child[size_t(std::max_element(nd.n.begin(), nd.n.end()) - nd.n.begin())];
-	}
 	std::vector<double> pi;
 	tree.improved_policy(r, pi);
-	if (p.sample_top > 0) {   // 쉬움: 개선 정책 상위 k개 중에서 확률대로 뽑는다 (스탯 치트 없이 사람처럼 틀린다)
-		std::vector<int> ord(k);
-		for (size_t i = 0; i < k; i++)
-			ord[i] = int(i);
-		std::sort(ord.begin(), ord.end(), [&](int a, int b) { return pi[a] > pi[b]; });
-		int kk = std::min<int>(p.sample_top, int(k));
-		double sum = 0.0;
-		for (int i = 0; i < kk; i++)
-			sum += pi[ord[i]];
-		double u = rng.unit() * sum;
-		int pickd = ord[0];
-		for (int i = 0; i < kk; i++) {
-			u -= pi[ord[i]];
-			if (u <= 0.0) {
-				pickd = ord[i];
-				break;
-			}
-		}
-		res.action = r.acts[pickd];
-	} else if (p.temp > 0.0) {   // 온도 표본: π'^(1/T) — T 가 작을수록 최선 수에 가깝다
-		std::vector<double> wt(k);
-		double mx = -1e300, sum = 0.0;
-		for (size_t i = 0; i < k; i++) {
-			wt[i] = std::log(std::max(pi[i], 1e-300)) / p.temp;
-			mx = std::max(mx, wt[i]);
-		}
-		for (size_t i = 0; i < k; i++)
-			sum += (wt[i] = std::exp(wt[i] - mx));
-		double u = rng.unit() * sum;
-		size_t pickd = k - 1;
-		for (size_t i = 0; i < k; i++)
-			if ((u -= wt[i]) <= 0.0) {
-				pickd = i;
-				break;
-			}
-		res.action = r.acts[pickd];
-	}
-		res.policy.assign(pi.begin(), pi.end());
+	res.policy.assign(pi.begin(), pi.end());
 	std::vector<double> q;
 	tree.completed_q(r, q);
 	double rv = 0.0;
 	for (size_t i = 0; i < k; i++)
 		rv += pi[i] * q[i];
 	res.root_v = float(rv);
-	if (keep) {
-		static_cast<ReuseImpl *>(keep->impl)->nodes = std::move(tree.nodes);
-		keep->net = &net;
-		keep->aux_w = p.aux_w;
-		keep->style_team = p.style_team;
-	}
 	return res;
 }
 
@@ -859,7 +702,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 		r ^= r >> 27;
 		return r * 0x2545F4914F6CDD1Dull;
 	};
-	// 커리어와 같은 꼴: 직업 9 · 성장은 카드 셈 · 선수단 5명 중 골키퍼 1명 (절반은 디펜스가 가장 높은 선수 = 커리어 기본값·상대 학교, 절반은 아무나 — 11-24 셋째)
+	// 커리어와 같은 꼴: 직업 9 · 성장은 카드 셈 · 선수단 5명 중 골키퍼 1명 (절반은 디펜스가 가장 높은 선수 = 커리어 기본값·상대 학교, 절반은 아무나)
 	constexpr int JOBS_N = 9;
 	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, TARGETMAN };
 	constexpr int SQ = PER_TEAM;
@@ -868,7 +711,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	const int prospects = int(next() % (SQ + 1));          // 유망주 0~5명
 	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 카드 0 ~ 2·level+1 장
 	const int mono = next() % 5 == 0 ? POOL[next() % JOBS_N] : 0;   // 20 % 는 한 직업 팀
-	const bool ace_team = next() % 10 < 3;   // 몰아 키운 에이스 (11-23): 30 % 팀은 전직 선수 한 명이 카드 많이
+	const bool ace_team = next() % 10 < 3;   // 몰아 키운 에이스: 30 % 팀은 전직 선수 한 명이 카드 많이
 	const int ace = ace_team && prospects < SQ ? prospects + int(next() % (SQ - prospects)) : -1;
 	for (int i = 0; i < SQ; i++) {
 		if (i < prospects) {
@@ -907,7 +750,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	set_perks(s, team, hold_up);
 }
 
-// 길 고르기용 상태 가치 (card.h value_path — 사용자 11-18 「길은 간 뒤의 상태로」): team 에 좋을수록 큼 (−1 ~ 1). ctx = const Net *
+// 길 고르기용 상태 가치 (card.h value_path — 길은 간 뒤의 상태로): team 에 좋을수록 큼 (−1 ~ 1). ctx = const Net *
 float state_value(const State &s, int team, const void *ctx) {
 	if (s.phase == GAME_OVER)
 		return s.winner == -1 ? 0.0f : s.winner == team ? 1.0f : -1.0f;

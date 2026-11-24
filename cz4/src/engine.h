@@ -1,19 +1,18 @@
 #pragma once
-// 판 공용 상수·좌표 도우미 — 감독 모드 카드 엔진(card*.cpp)이 쓴다. 규칙은 card.cpp 에 있다.
-// (옛 5대5 본편 규칙 엔진 engine.cpp 는 2026-11-24 에 걷어냈고, 이 머리 파일만 남았다)
+// 판 공용 상수·좌표 도우미 — 규칙 엔진(card*.cpp)이 쓴다. 규칙은 card.cpp 에 있다.
 #include <algorithm>
 #include <cstdlib>
 #include <vector>
 
 namespace cf {
 
-constexpr int W = 12, H = 8, NT = W * H;          // board.gd — 11-24 셋째 사용자 「판 12×8」 (옛 11×8 · 10×7) · 진영 x 0~5 / 6~11 (가운데 중립 줄 없음)
+constexpr int W = 12, H = 8, NT = W * H;          // board.gd — 진영 x 0~5 / 6~11 (가운데 중립 줄 없음)
 constexpr int GOAL_Y0 = H / 2 - 1, GOAL_N = 2;    // 골대 = 끝줄 가운데 두 칸 (y 3·4)
-constexpr int PER_TEAM = 5, PLAYERS = 2 * PER_TEAM;   // 팀 = 필드 4 + 골키퍼 1 (11-24 셋째 「골키퍼가 판 위 선수」) — uid 홈 0~4 · 원정 5~9 · game_state.gd PLAYERS_PER_TEAM
+constexpr int PER_TEAM = 5, PLAYERS = 2 * PER_TEAM;   // 팀 = 필드 4 + 골키퍼 1 — uid 홈 0~4 · 원정 5~9 · game_state.gd PLAYERS_PER_TEAM
 constexpr int FIELD_N = PER_TEAM - 1;               // 배치하는 필드 선수 수 (골키퍼는 골대에서 시작 — 놓지 않음)
-constexpr int POOL_N = 9;                   // 드래프트 풀 직업 수 (card_az.h 슬롯 — 11-24 셋째 링커 없앰)
+constexpr int POOL_N = 9;                   // 드래프트 풀 직업 수 (card_az.h 슬롯)
 constexpr int POINTS_PER_TURN = 2;   // 차례마다 포인트
-constexpr int LONG_PASS_MIN = 5;                   // ball_actions.gd (v5.12)
+constexpr int LONG_PASS_MIN = 5;                   // 이 거리부터 공중볼 (ball_actions.gd)
 
 struct V2 {
 	int x = 0, y = 0;
@@ -29,8 +28,7 @@ constexpr V2 DIRS[4] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }; // board.gd
 
 enum Team { HOME = 0, AWAY = 1 };
 enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2 };
-// 크리에이터(9)는 v5.30에 풀에서 빠졌다 — 번호는 구멍으로 남긴다 (기보·저장 호환). 퀵슈터 11 · 런처 12
-// 번호는 player_state.gd Pos 와 같다. 빈 번호(7·9·11·13·14)는 옛 직업 자리 — 13 링커는 11-24 셋째에 마에스트로와 합침(옛 저장은 core/career.gd 가 마에스트로로)
+// 직업 번호는 player_state.gd Pos 와 같다. 빈 번호(7·9·11·13·14)는 옛 직업 자리 — 저장 호환으로 번호를 당기지 않는다
 enum Pos { PROSPECT = 0, CANNON = 1, TARGETMAN = 2, TRICKSTER = 3, TITAN = 4, MARKER = 5,
 	HUNTER = 6, WALL = 8, SPRINTER = 10, MAESTRO = 12 };
 
@@ -49,7 +47,7 @@ inline bool is_box_of(int team, V2 t) {
 	return team == HOME ? t.x < 2 : t.x >= W - 2;
 }
 inline bool is_any_box(V2 t) { return is_box_of(HOME, t) || is_box_of(AWAY, t); }
-// 자기 진영 = 판 절반 (spec 3.2 v5.12 — 배치 자유화). HOME x 0~5 / AWAY x 6~11 (12칸 — 11-24 셋째)
+// 자기 진영 = 판 절반: HOME x 0~5 / AWAY x 6~11
 inline bool is_own_half(int team, V2 t) {
 	if (!in_bounds(t))
 		return false;
