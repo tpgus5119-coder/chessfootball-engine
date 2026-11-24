@@ -18,7 +18,6 @@ namespace card {
 constexpr int CARD_HALF_TURNS = 60;   // 한 판 = 팀당 30차례 · 전후반 없음 (11-24 사용자 「전후반 없애고 ㄱ」) — 이름은 옛것(반 = 경기 하나)
 constexpr int WIN_GOALS = 3;          // 먼저 3골이면 바로 끝 (11-24)
 constexpr int TARGET_HOLD = 4;   // 타깃맨가 공을 잡을 때 버티는 힘 (11-24 사용자 「버티기 4 전직 혜택 · 메인 스탯업 +1」)
-constexpr int GK_DEF0 = 3, GK_KICK0 = 4, GK_RANGE0 = 4;   // 골키퍼 기본: 디펜스(= 체력) 3 · 킥 힘 4 · 킥 범위 4 (11-24 사용자)
 extern int g_time_input;   // 0 = 망 입력에서 시간(반 진행·후반)을 0 으로 (자가학습 CF_NO_TIME)
 extern int g_half_turns;   // 반 길이(두 팀 합 차례) — 자가학습만 CF_HALF_TURNS 로 바꾼다
 enum CardType { C_KICK = 0, C_MOVE = 1, C_DEF = 2, C_SHOT = 3 };   // 행동 셋 (킥·이동·수비) · C_SHOT = 슛 범위 묻기 전용 (11-22 — 킥 범위 C_KICK 은 패스)
@@ -26,9 +25,14 @@ enum Role { R_ATK = 0, R_DEF = 1 };   // 공 가진 팀 = 공격
 constexpr int CARD_POOL_N = 10;
 
 // 선수 기준 수치 (11-19 사용자 · 11-21 이동 3): 킥 3 · 수비 3 · 이동 3 — 여기에 스탯업(bonus)·직업 보정을 더한다
-constexpr int BASE_KICK = 4, BASE_DEF = 3, BASE_MOVE = 3;
-constexpr int MOVE_RANGE = 3;      // 무브 범위 3 고정 — 무브 수치(힘)와 따로 (11-22 사용자 「무브 범위 = 힘 아님」) · 스프린터만 늘어남   // 11-22 사용자 「계산식 하나 · 범위 = 능력치」: 힘 = 능력치 + 1 − 거리 · 킥 4 (옛 「3 + 2 − 거리」와 같은 값)
-constexpr int KICK_RANGE = 4;     // 킥 범위 상한 (범위 보너스만큼 늘어남)
+// 기본 스탯 (11-24 둘째 사용자 「디펜스 3 · 무브 4 · 킥 5」): 힘 = 능력치 + 1 − 거리 · 범위 = 기본 능력치 (무브 = 이동·드리블 · 킥 = 패스·슛)
+// 성장(스탯업 = 힘 · 범위 성장 = 범위)·직업 보너스는 이 위에 그대로
+constexpr int BASE_KICK = 5, BASE_DEF = 3, BASE_MOVE = 4;
+constexpr int MOVE_RANGE = BASE_MOVE;   // 이동·드리블 범위 4 (스프린터 성장 range_up 만큼 더)
+constexpr int KICK_RANGE = BASE_KICK;   // 패스·슛 범위 5 (마에스트로·캐논 성장 kick_range_up 만큼 더) — 5칸 패스 = 롱패스(공중볼, LONG_PASS_MIN)
+// 골키퍼 = 경기 전에 선수단 5명 중 1명 (11-24 둘째 사용자): 그 선수의 디펜스 = 골대 체력 · 킥 범위 = 롱킥 범위 · 킥 힘 = 롱킥 힘 (keeper_stats).
+// 아무도 안 정했으면(시험판·선수 모드) 기본 선수 값 = 디펜스 3 · 킥 5 · 범위 5
+constexpr int GK_DEF0 = BASE_DEF, GK_KICK0 = BASE_KICK, GK_RANGE0 = KICK_RANGE;
 
 extern int g_goal_hp;   // 측정용 CF_GOAL_HP — 0 이 아니면 두 팀 골키퍼 디펜스를 이 값으로 (규칙 = 팀마다 gk_def)
 
@@ -74,7 +78,7 @@ struct State {
 	int ot = 0;         // 1 = 연장 중 (정규 g_half_turns 뒤 · 차례 제한 없는 골든골 — 먼저 넣으면 승, 11-24 사용자)
 	int keeper = -1;                    // 슛을 막은 키퍼가 공을 쥔 팀 (−1 = 없음) — 그 팀 다음 차례 첫 수 = 키퍼 롱킥(포인트 2 · 필드 위 아군 고르기, 11-23 사용자)
 	int ghp[2] = { 0, 0 };
-	int gk_def[2] = { GK_DEF0, GK_DEF0 }, gk_kick[2] = { GK_KICK0, GK_KICK0 }, gk_range[2] = { GK_RANGE0, GK_RANGE0 };   // 골키퍼 스탯 (성장 = 디펜스·범위 중 고르기 3번 · 스탯마다 +2 까지 — 11-24)              // 팀 t 골대(키퍼) 남은 체력 — 슛의 남은 힘만큼 깎이고 0 이하면 골 · 킥오프(경기·반 시작·골 뒤)마다 다시 참 (11-23 사용자)
+	int gk_def[2] = { GK_DEF0, GK_DEF0 }, gk_kick[2] = { GK_KICK0, GK_KICK0 }, gk_range[2] = { GK_RANGE0, GK_RANGE0 };   // 골키퍼 = 키퍼로 정한 선수의 디펜스(= 골대 체력)·킥 힘·킥 범위 (11-24 둘째) · ghp = 남은 체력 (슛 남은 힘 > 체력이면 골 · 킥오프마다 다시 참)
 	int role[2] = { R_DEF, R_ATK };
 	int hold = 0;                      // 공 임자가 태클을 버티는 힘 = 그 선수 드리블 능력치 (막 뺏은 공 = 뺏은 선수 태클 능력치) — 11-21 사용자, 차례마다 줄지 않음
 	int touch_team = -1, touch_mask = 0;   // 이번 공격에서 공을 만진 아군 (uid 비트) — 가담
@@ -150,7 +154,9 @@ void set_perks(State &s, int team, const int range_up[PER_TEAM], const int hold_
 constexpr int GROW_MAX = 1, GROW_K = 5;   // 모든 스탯 +1 한 번 (11-23 사용자 「메인이 아닌 스탯도 +1 까지」 — 전직이 스탯 +1 인 직업만 그 스탯 최종 +2)
 bool grow_ok(int pos, const int st[GROW_K], int k);
 enum StatKind { ST_SHOT = 0, ST_PASS = 1, ST_DRIBBLE = 2, ST_DEF = 3 };
-void set_keeper(State &s, int team, int def, int kick, int range);   // 골키퍼 스탯 (커리어 성장)
+void set_keeper(State &s, int team, int def, int kick, int range);   // 골키퍼 스탯 = 키퍼로 정한 선수의 값 (keeper_stats)
+// 그 선수가 키퍼일 때 값: out = [디펜스(= 골대 체력) · 킥 힘(패스 능력치) · 킥 범위(패스 범위)] — 성장·직업 보너스 포함 (헌터 디펜스 +1 · 링커 패스 +1 · 마에스트로 범위 +1·성장)
+void keeper_stats(int position, const int bonus[4], int kick_range_up, int out[3]);
 void set_trial(State &s, int team_n);   // 시험판: 팀 인원 · 스킬 패시브
 extern int g_skill_pow;
 bool skill_job(int position);

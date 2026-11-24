@@ -29,7 +29,7 @@ static void emit(const Event &e) {
 }
 
 // ---------- 직업 능력 (11-19 사용자 둘째 결정 — 모두 상시, 게이지·켜기 없음) ----------
-// 월·타이탄·마커 그대로 · 캐논 킥 힘 +1 · 마에스트로 킥 범위 +1 · 트릭스터 이동 힘 +1 · 스프린터 이동 범위 +1 · 헌터 수비 힘 +1 (늘).
+// 월·타이탄·마커 그대로 · 캐논 슛 거리 감쇠 없음 · 마에스트로 킥 범위 +1 · 트릭스터 드리블 존 승리에 힘 안 깎임 · 스프린터 이동 범위 +1 · 헌터 수비 힘 +1 (늘).
 // 만능 = 다섯 모두. 11-20 사용자 「부스터 노마드 빼서 8종」 — 둘은 감독 모드에 안 나온다 (풀 칸 5·9 는 망 입력·수 번호 자리 지키려 남김)
 
 // 측정용 스위치 (환경 변수 — knobs_from_env). 규칙이 아니다: 사용자 11-21 비교 실험용
@@ -45,8 +45,8 @@ static bool sk_power(int pos, int sk, int use) {   // 이 수가 힘 +1 스킬�
 		return false;
 	const bool all = pos == ALLROUND && sk == 1;
 	const bool kick = use == U_PASS || use == U_SHOT, mv = use == U_MOVE || use == U_DRIBBLE;
-	// 11-23 캐논 = 「슛이 거리로 안 약해짐」(act_power) · 링커 = 패스 힘 +1 (스루패스는 누구나 — 11-23 사용자) · 트릭스터 = 무브 힘 · 헌터 = 수비 힘 (중거리 슈터는 「슛이 거리로 안 약해짐」 — act_power · 만능은 다)
-	return (use == U_PASS && pos == PASSER) || (kick && all) || (mv && (pos == TRICKSTER || all)) || (use == U_STANCE && (pos == HUNTER || all));
+	// 11-23 캐논 = 「슛이 거리로 안 약해짐」(act_power) · 링커 = 패스 힘 +1 · 헌터 = 수비 힘 · 트릭스터 = 힘 +1 없음 (11-24 둘째 — 드리블이 존을 이겨도 힘이 안 깎임, dribble_run)
+	return (use == U_PASS && pos == PASSER) || (kick && all) || (mv && all) || (use == U_STANCE && (pos == HUNTER || all));
 }
 static bool sk_range(int pos, int sk, int want) {   // 이 수가 범위 +1 스킬인가
 	if (!sk)
@@ -147,11 +147,11 @@ static void sync_roles(State &s) {
 		s.role[t] = t == bt ? R_ATK : R_DEF;
 }
 
-bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 범위 −1 (11-24 사용자 정정 — 힘은 그대로 · 겹치지 않음 · 공 든 마커는 꺼짐)
+bool marked(const State &s, const Player &p) {   // 상대 마커에 상하좌우로 붙었다 — 범위 −1 (11-24 사용자 정정 — 힘은 그대로 · 겹치지 않음) · 공 유무와 상관없이 늘 (11-24 둘째 — 겨루지 않음)
 	if (!p.placed())
 		return false;
 	for (const Player &m : s.players)
-		if (m.team != p.team && has_passive(m.position, MARKER) && m.placed() && m.uid != s.ball_owner && manhattan(m.pos, p.pos) == 1)
+		if (m.team != p.team && has_passive(m.position, MARKER) && m.placed() && manhattan(m.pos, p.pos) == 1)
 			return true;
 	return false;
 }
@@ -185,7 +185,7 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 	}
 	if (sk_power(p.position, s.sk_passive ? 1 : skl_now(s, p, -1), use))
 		v += g_skill_pow;
-	// 거리 반비례: 힘 = 능력치 + 1 − 거리 (킥 4 → 1칸 4 · 2칸 3 · 3칸 2 · 4칸 1 · 드리블 3 → 3 · 2 · 1, 거리 0 = 공을 잡고 선 힘 = 능력치)
+	// 거리 반비례: 힘 = 능력치 + 1 − 거리 (킥 5 → 1칸 5 · … · 5칸 1 · 드리블 4 → 4 · 3 · 2 · 1, 거리 0 = 공을 잡고 선 힘 = 능력치 — 11-24 둘째)
 	// 측정용 CF_KICK_FLAT=1 이면 킥은 거리와 상관없이 수치 그대로
 	const int dd = use == U_SHOT && p.position == CANNON ? 1 : d;   // 캐논 = 슛이 거리로 안 약해짐 (늘 1칸 힘 — 11-23 사용자 「캐논·스나이퍼 합쳐라 · 거리 반비례 없음 · 힘 +1 은 메인 스탯업」)
 	if ((kick && !g_kick_flat) || use == U_DRIBBLE)
@@ -213,7 +213,7 @@ int act_range(const State &s, const Player &p, int want, int skl) {
 	else if (want == C_KICK)
 		r = KICK_RANGE + (p.position == CANNON ? 0 : p.kick_range_up);   // 패스 범위 — 마에스트로 성장 (perks)
 	else
-		r = MOVE_RANGE + p.range_up;          // 무브 범위 3 고정 — 힘(무브 수치)과 따로 (11-22 사용자) · 스프린터 성장 (perks)
+		r = MOVE_RANGE + p.range_up;          // 무브 범위 4 — 힘(스탯업)과 따로 · 스프린터 성장 (perks)
 	if (sr)
 		r += g_range_bonus;   // 마에스트로 패스 · 스프린터 무브 범위 +1 (11-22)
 	if (p.charge == 2)
@@ -457,6 +457,18 @@ void set_keeper(State &s, int team, int def, int kick, int range) {
 		s.ghp[team] = g_goal_hp ? g_goal_hp : s.gk_def[team];
 }
 
+void keeper_stats(int position, const int bonus[4], int kick_range_up, int out[3]) {
+	State t;   // 판 밖 선수 — 마커·「강하게」 없이 그 선수 맨 값
+	Player p;
+	p.position = position;
+	for (int k = 0; k < 4; k++)
+		p.bonus[k] = bonus[k];
+	p.kick_range_up = kick_range_up;
+	out[0] = act_power(t, p, U_STANCE);
+	out[1] = act_power(t, p, U_PASS, 1);   // 1칸 힘 = 능력치 (롱킥은 do_keep 이 거리로 깎는다)
+	out[2] = act_range(t, p, C_KICK, 0);
+}
+
 void set_trial(State &s, int team_n) {
 	s.team_n = std::max(1, std::min(PER_TEAM, team_n));
 	s.sk_passive = 1;
@@ -600,14 +612,15 @@ static bool screened(const State &s, const Player &p, V2 tile, V2 last) {   // �
 	return q && q->team == p.team && q->uid != p.uid;
 }
 
-// 경합 통일 (11-24 사용자): **동점이면 공 가진 쪽이 이긴다** · 남은 힘 0 이면 무조건 진다 (0 vs 1 이상)
-static inline bool ball_wins(int ball_val, int other) { return ball_val > 0 && ball_val >= other; }
+// 경합 통일 (11-24 둘째 사용자 「동점이면 당하는 쪽 승리」): 거는 쪽 힘 > 당하는 쪽 힘일 때만 이긴다 — 존(공 든 쪽이 건다 → 서 있던 수비 승) ·
+// 태클(태클러가 건다 → 공 임자 승) · 슛(슛이 건다 → 골대 체력과 같으면 막힘). 이긴 쪽은 늘 1 이상 남는다 (옛 「남은 힘 0 이면 다음 경합 짐」 없음)
+static inline bool beats(int atk, int def) { return atk > def; }
 
-// 존 경합: 공 든 쪽이 건다 → 가만히 있던 수비수 — 동점은 공 든 쪽 (ball_wins)
+// 존 경합: 공 든 쪽이 건다 → 가만히 있던 수비수 — 동점은 수비 (beats)
 static bool zone_contest(State &s, const Player &atk, int atk_val, int du, V2 tile) {
 	const Player &def = s.players[du];
 	int dv = def.stance;   // 협동 수비는 없다 (사용자 2026-10-29 "카드모드에서는 협동수비 없다")
-	bool win = ball_wins(atk_val, dv);
+	bool win = beats(atk_val, dv);
 	emit({ 0, atk.uid, du, tile, atk_val, dv, win ? 1 : 0, {} });
 	return win;
 }
@@ -659,7 +672,7 @@ static void reach(V2 from, int max_steps, const bool *blocked, V2 goal_dest, Rea
 
 // 길의 경합 미리 보기 (사용자 11-18 「경합이 있는 경로는 피해야지. 무조건. 불가피한 경우에만 가장 실점 확률이 적은 경합 칸으로」).
 // dribble_run·send_ball 과 같은 판정을 상태를 바꾸지 않고 센다: 존 칸 · 수비수마다 한 번(met) · 스크린(끝 칸 제외 아군 칸) ·
-// 이기려면 힘 ≥ 태세(동점은 공 든 쪽 · 남은 힘 0 은 짐 — ball_wins). 지면 거기서 공이 넘어가 끝난다. arm = 이 칸을 지난 뒤부터 경합(루즈볼 줍는 이동), UNSET = 처음부터
+// 이기려면 힘 > 태세(동점은 수비 — beats). 지면 거기서 공이 넘어가 끝난다. arm = 이 칸을 지난 뒤부터 경합(루즈볼 줍는 이동), UNSET = 처음부터
 struct Foe {
 	const State *s;
 	const int *zone;   // null = 경합 없음 (공 없는 이동)
@@ -700,7 +713,7 @@ static PathKey path_key(const Foe *f, V2 from, const std::vector<V2> &p) {
 		if (du == -1 || met[du] || screened(s, me, t, p.back()))
 			continue;
 		met[du] = true;
-		if (!ball_wins(cur, s.players[du].stance)) {   // 동점은 공 든 쪽 (zone_contest)
+		if (!beats(cur, s.players[du].stance)) {   // 동점은 수비 (zone_contest)
 			k.lose = 1;
 			const int fwd = forward_dir(me.team);
 			for (const Player &q : s.players)
@@ -709,7 +722,8 @@ static PathKey path_key(const Foe *f, V2 from, const std::vector<V2> &p) {
 			k.near = -goal_dist(me.team, t);   // 우리 골에서 가까울수록 나쁨
 			break;
 		}
-		cur -= s.players[du].stance;   // 이긴 만큼 남음 (11-23)
+		if (!(f->carry && me.position == TRICKSTER))
+			cur -= s.players[du].stance;   // 이긴 만큼 남음 (11-23) · 트릭스터 드리블은 안 깎임 (11-24 둘째)
 	}
 	k.left = k.lose ? 0 : -cur;
 	return k;
@@ -839,8 +853,9 @@ static bool pushable(const State &s, const Player &q, V2 to) {
 }
 
 // 타이탄 착지 밀기 — 도착 칸 상하좌우의 적 모두를 1칸 바깥으로 (본편 5.9와 같다). 밀린 선수는 태세가 풀린다
+// 공 유무와 상관없이(타이탄이 공을 들었든 · 밀리는 적이 공 임자든) 늘 성공 — 피지컬 스탯 없음, 겨루지 않음 (11-24 둘째 사용자). 밀 칸이 막히면(판 밖·사람·박스·골대) 그 적만 그대로
 static void titan_push(State &s, const Player &p) {
-	if (!has_passive(p.position, TITAN) || s.ball_owner == p.uid)
+	if (!has_passive(p.position, TITAN))
 		return;
 	for (const V2 &d : DIRS) {
 		const Player *q = player_at(s, p.pos + d);
@@ -875,7 +890,8 @@ static V2 dribble_run(State &s, int uid, int &val, const std::vector<V2> &path) 
 			mark_steal(s);
 			return t;
 		}
-		val -= s.players[du].stance;   // 이긴 만큼 남음
+		if (s.players[uid].position != TRICKSTER)
+			val -= s.players[du].stance;   // 이긴 만큼 남음 · 트릭스터 = 이겨도 힘이 안 깎여 다음 존도 처음 힘으로 (전직 혜택, 11-24 둘째 — 거리 감쇠는 그대로)
 		s.players[du].stance = 0;   // 진 수비수는 태세가 풀린다
 		s.players[du].stance_left = 0;
 	}
@@ -897,7 +913,7 @@ static void tackle_do(State &s, int tuid, int tv) {
 	const Player &t = s.players[tuid];
 	const Player &h = s.players[s.ball_owner];
 	const int hv = eff_hold(s);
-	const bool win = !ball_wins(hv, tv);   // 동점은 공 임자 (11-24 경합 통일) · 버티는 힘 0 이면 진다
+	const bool win = beats(tv, hv);   // 동점은 공 임자 (당하는 쪽 — 11-24 경합 통일)
 	emit({ 0, tuid, h.uid, h.pos, tv, hv, win ? 1 : 0, {} });
 	if (win) {
 		set_owner(s, tuid);
@@ -964,10 +980,6 @@ static bool do_move(State &s, int uid, V2 dest) {
 		s.players[uid].pos = dest;
 	} else {
 		s.players[uid].pos = dest;
-		const Player &me = s.players[uid];
-		const bool at_h = s.ball_owner >= 0 && s.players[s.ball_owner].team != team && manhattan(dest, s.players[s.ball_owner].pos) == 1;
-		if (!at_h)   // 공 임자 곁에 닿으면 밀지 않는다
-			titan_push(s, me);
 	}
 	{   // 움직이면 태세가 풀린다 (11-24 — 옛 「월 1칸 이동해도 유지」 없앰)
 		// 태세 → 이동 = 태클 (11-23 사용자 「태세+이동도 태클」): 태세 중이던 선수가 움직여 상대 공 임자 곁에 서면 태클 · 힘 = 태세 힘 + 1 − 움직인 칸 (킥·드리블과 같은 거리 감쇠)
@@ -978,6 +990,7 @@ static bool do_move(State &s, int uid, V2 dest) {
 		if (st0 > 0 && pk < 0 && s.ball_owner >= 0 && s.players[s.ball_owner].team != team && manhattan(mv.pos, s.players[s.ball_owner].pos) == 1 && !is_any_box(mv.pos))
 			tackle_do(s, uid, std::max(1, st0 + 1 - int(path.size())));
 	}
+	titan_push(s, s.players[uid]);   // 태클을 본 뒤 밀기 (공을 주웠든 아니든)
 	const V2 end = s.players[uid].pos;
 	if (path.size() >= 3 && end == path.back() && (path.back().x - from.x) * forward_dir(team) > 0)
 		rep_add(s, uid, SPRINTER);
@@ -1006,6 +1019,7 @@ static bool do_dribble(State &s, int uid, V2 dest) {
 	pay_point(s);
 	const V2 end = dribble_run(s, uid, pow, path);
 	s.players[uid].pos = end;
+	titan_push(s, s.players[uid]);   // 타이탄은 드리블 뒤에도 민다 (11-24 둘째 「공 유무와 상관없이」)
 	if (s.ball_owner == uid) {
 		s.hold = catch_hold(s.players[uid], pow);   // 드리블 뒤 버티는 힘 = 그 드리블의 판정 힘 (11-22 사용자 — 태클로 깎이고 다음 드리블·패스 받기 때 그 값으로)
 		if ((end.x - from.x) * forward_dir(team) > 0)
@@ -1174,10 +1188,11 @@ static bool do_shot(State &s, int uid) {
 		after_action(s, team);
 		return true;
 	}
-	// 슛 길의 경합을 뚫고 골대에 닿았다 — 남은 힘만큼 골키퍼 체력을 깎는다 · 0 이하면 골 (11-23 사용자 「골대 체력 · 이긴 만큼만 남음」)
+	// 슛 길의 경합을 뚫고 골대에 닿았다 — 남은 힘이 골대 체력보다 크면 골 · 아니면 남은 힘만큼 체력을 깎고 막힘 (11-23 「골대 체력」 · 11-24 둘째 동점 = 막힘)
 	const int keeper = opponent(team);
-	s.ghp[keeper] -= pow;
-	if (s.ghp[keeper] > 0) {   // 막힘 = 키퍼가 공을 쥔다 → 그 팀 다음 차례 첫 수 = 키퍼 롱킥 (포인트 1 · 킥 범위 안 아군)
+	const bool scored = beats(pow, s.ghp[keeper]);   // 골 = 남은 힘 > 골대 체력 (동점은 골대 — 11-24 둘째 「당하는 쪽 승」)
+	s.ghp[keeper] = std::max(0, s.ghp[keeper] - pow);
+	if (!scored) {   // 막힘 = 키퍼가 공을 쥔다 → 그 팀 다음 차례 첫 수 = 키퍼 롱킥 (포인트 1 · 킥 범위 안 아군)
 		for (Player &q : s.players)
 			q.charge = 0;
 		s.ball_owner = -1;

@@ -45,6 +45,7 @@ void CardNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("dev_pos", "uid", "position"), &CardNative::dev_pos);
 	ClassDB::bind_method(D_METHOD("dev_ghp", "team", "hp"), &CardNative::dev_ghp);
 	ClassDB::bind_method(D_METHOD("set_keeper", "team", "def", "kick", "range"), &CardNative::set_keeper);
+	ClassDB::bind_static_method("CardNative", D_METHOD("keeper_stats", "position", "bonus", "kick_range_up"), &CardNative::keeper_stats);
 	ClassDB::bind_method(D_METHOD("act_range", "uid", "want", "sk"), &CardNative::act_range, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("act_power", "uid", "use", "dist", "sk"), &CardNative::act_power, DEFVAL(0), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("ai_load", "bytes"), &CardNative::ai_load);
@@ -430,6 +431,17 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 
 void CardNative::set_keeper(int team, int def, int kick, int range) {   // 골키퍼 스탯 (커리어 성장 — 경기 시작 전에)
 	ck::set_keeper(state, team, def, kick, range);
+}
+
+PackedInt32Array CardNative::keeper_stats(int position, PackedInt32Array bonus, int kick_range_up) {   // 그 선수가 키퍼일 때 [디펜스, 킥, 범위] (11-24 둘째 — set_keeper 에 그대로)
+	int b[4] = {}, out[3];
+	for (int k = 0; k < 4 && k < bonus.size(); k++)
+		b[k] = bonus[k];
+	ck::keeper_stats(position, b, kick_range_up, out);
+	PackedInt32Array r;
+	for (int v : out)
+		r.push_back(v);
+	return r;
 }
 
 void CardNative::dev_ghp(int team, int hp) {   // 개발·시험용 — 골키퍼 남은 체력 놓기 (11-23)

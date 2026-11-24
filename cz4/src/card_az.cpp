@@ -115,6 +115,8 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[17] = float(s.gk_range[opp]) / 6.0f;
 	d[18] = s.keeper == team;   // 키퍼가 공을 쥔 팀 — 우리 · 상대
 	d[19] = s.keeper == opp;
+	d[20] = s.ot;          // 연장(골든골) 중 (11-24 둘째 사용자 「연장 중인지 AI 망 입력에」)
+	d[21] = s.knockout;    // 토너먼트(단판 — 비기면 연장) · 리그는 0
 }
 
 int action_index(const State &s, const Action &a) {
@@ -855,19 +857,20 @@ void random_lineup(State &s, int team, unsigned long long r) {
 		r ^= r >> 27;
 		return r * 0x2545F4914F6CDD1Dull;
 	};
-	// 11-20 사용자 「구성 넓혀라」 — 커리어와 같은 꼴: 8직업 · 스탯은 킥(슛·패스 같이)·무브·디펜스 각 0~3
-	// 만능은 뺌 (11-20 사용자 「만능은 없고, 각 직업 4명씩」 — 옛 만능 에이스는 직업을 받음)
-	constexpr int JOBS_N = 10;   // 11-23 직업 9개 (스나이퍼를 캐논에 합침 — 옛 부스터 자리는 새 캐릭터 몫으로 빔 · 패서 = 옛 노마드 자리)
-	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, PASSER, TARGETMAN };   // 11-24 타깃맨
-	int pos[PER_TEAM], bonus[PER_TEAM][4] = {}, rng_up[PER_TEAM] = {}, krng_up[PER_TEAM] = {}, hold_up[PER_TEAM] = {};
+	// 11-20 사용자 「구성 넓혀라」 — 커리어와 같은 꼴: 직업 10 · 스탯은 카드 셈
+	// 선수단 5명 = 판 4명 + 키퍼 1명 (11-24 둘째 사용자 「경기 전에 5명 중 1명을 키퍼로」) — 키퍼는 절반은 디펜스가 가장 높은 선수(커리어 기본값·상대 학교), 절반은 아무나
+	constexpr int JOBS_N = 10;
+	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, PASSER, TARGETMAN };
+	constexpr int SQ = PER_TEAM + 1;
+	int pos[SQ], bonus[SQ][4] = {}, rng_up[SQ] = {}, krng_up[SQ] = {}, hold_up[SQ] = {};
 	int used = 0;
-	const int prospects = int(next() % (PER_TEAM + 1));   // 유망주 0~4명 (11-24 옛 다섯째 자리 없앰 — 옛 0~5 의 4·5 는 둘 다 「모두 유망주」였다)
-	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 스탯 합 0 ~ 3 × level
+	const int prospects = int(next() % (SQ + 1));          // 유망주 0~5명
+	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 카드 0 ~ 2·level+1 장
 	const int mono = next() % 5 == 0 ? POOL[next() % JOBS_N] : 0;   // 20 % 는 한 직업 팀
-	// 몰아 키운 에이스 (11-23 사용자 「몰아 키운 에이스도 자가학습에 넣어」): 30 % 팀은 전직 선수 한 명이 카드 8~13장 (커리어 한 해 ≈ 26장 · 한 선수 다 키우기 ≈ 13장)
+	// 몰아 키운 에이스 (11-23 사용자): 30 % 팀은 전직 선수 한 명이 카드 8~13장
 	const bool ace_team = next() % 10 < 3;
-	const int ace = ace_team && prospects < PER_TEAM ? prospects + int(next() % (PER_TEAM - prospects)) : -1;
-	for (int i = 0; i < PER_TEAM; i++) {
+	const int ace = ace_team && prospects < SQ ? prospects + int(next() % (SQ - prospects)) : -1;
+	for (int i = 0; i < SQ; i++) {
 		if (i < prospects) {
 			pos[i] = PROSPECT;
 		} else if (mono) {
@@ -880,9 +883,9 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			used |= 1 << k;
 			pos[i] = POOL[k];
 		}
-		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(마에스트로 패스 범위 · 중거리 슈터 슛 범위 · 스프린터 무브 범위 · 월 지속)
+		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(마에스트로 패스 범위 · 캐논 슛 범위 · 스프린터 무브 범위 · 월 지속 · 타깃맨 버티기)
 		if (pos[i] != PROSPECT && (level > 0 || i == ace)) {   // 성장은 전직한 선수만 — 커리어와 같은 카드 셈 (카드 1장 = +1 · 스탯마다 한 번, 11-23)
-			const int n = i == ace ? 8 + int(next() % 6) : int(next() % (2 * level + 2));   // 카드 0 ~ 7장 · 에이스 8 ~ 13장
+			const int n = i == ace ? 8 + int(next() % 6) : int(next() % (2 * level + 2));
 			for (int c = 0; c < n; c++) {
 				int ok[GROW_K], m = 0;
 				for (int k = 0; k < GROW_K; k++)
@@ -890,7 +893,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 						ok[m++] = k;
 				if (!m)
 					break;
-				st[ok[next() % m]]++;   // 카드 1장 = +1 (11-23 스탯마다 한 번)
+				st[ok[next() % m]]++;
 			}
 		}
 		(pos[i] == MAESTRO || pos[i] == CANNON ? krng_up : pos[i] == WALL || pos[i] == TARGETMAN ? hold_up : rng_up)[i] = st[4];
@@ -899,19 +902,28 @@ void random_lineup(State &s, int team, unsigned long long r) {
 		bonus[i][ST_DRIBBLE] = st[2];
 		bonus[i][ST_DEF] = st[3];
 	}
-	set_lineup(s, team, pos, bonus);
-	set_perks(s, team, rng_up, hold_up, krng_up);
-	// 골키퍼 성장 (11-24 사용자 — core/career.gd keeper_ok 와 같다): 디펜스·범위 중 고르기 · 모두 3번 · 스탯마다 +2 까지
-	// → 다 키우면 (디펜스 5 · 범위 5) 또는 (디펜스 4 · 범위 6). 성장 0~3번 = 팀 성장 정도
-	const int gn = int(next() % (level + 1));
-	int gk[2] = { 0, 0 };   // 디펜스 · 범위
-	for (int c = 0; c < gn; c++) {
-		int k = int(next() % 2);
-		if (gk[k] >= 2)
-			k = 1 - k;
-		gk[k]++;
+	int gk = int(next() % SQ), ks[3];
+	if (next() % 2) {   // 디펜스가 가장 높은 선수 (같으면 뒤 선수 — core/career.gd keeper_auto 와 같다)
+		int best = -1;
+		for (int i = 0; i < SQ; i++) {
+			keeper_stats(pos[i], bonus[i], krng_up[i], ks);
+			if (ks[0] >= best)
+				best = ks[0], gk = i;
+		}
 	}
-	set_keeper(s, team, GK_DEF0 + gk[0], GK_KICK0, GK_RANGE0 + gk[1]);
+	keeper_stats(pos[gk], bonus[gk], krng_up[gk], ks);
+	int fp[PER_TEAM], fb[PER_TEAM][4], fr[PER_TEAM], fk[PER_TEAM], fh[PER_TEAM];
+	for (int i = 0, o = 0; i < SQ; i++) {
+		if (i == gk)
+			continue;
+		fp[o] = pos[i], fr[o] = rng_up[i], fk[o] = krng_up[i], fh[o] = hold_up[i];
+		for (int k = 0; k < 4; k++)
+			fb[o][k] = bonus[i][k];
+		o++;
+	}
+	set_lineup(s, team, fp, fb);
+	set_perks(s, team, fr, fh, fk);
+	set_keeper(s, team, ks[0], ks[1], ks[2]);
 }
 
 // 길 고르기용 상태 가치 (card.h value_path — 사용자 11-18 「길은 간 뒤의 상태로」): team 에 좋을수록 큼 (−1 ~ 1). ctx = const Net *

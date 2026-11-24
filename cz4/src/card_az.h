@@ -30,7 +30,7 @@ constexpr int OFF_ZONE = OFF_CHARGE + NF;              // 태세 존 칸: rel·N
 constexpr int OFF_ACTED = OFF_ZONE + 2 * NF;           // 이번 차례에 행동한 두는 팀 선수: me·NF + 칸
 constexpr int SPARSE = OFF_ACTED + PER_TEAM * NF;
 static_assert(NF == 72 && NPL == 32 && SPARSE == 4002, "입력 칸 수 (판 5, 11-24) — tools/az/train.py CF_MODE=card · tools/cz/net_slim.py 와 같게");
-constexpr int DENSE = 20;   // 숫자 입력 (card_az.cpp net_input 의 d[0]~d[19])
+constexpr int DENSE = 22;   // 숫자 입력 (card_az.cpp net_input 의 d[0]~d[21] — 11-24 둘째 d[20] 연장 중 · d[21] 토너먼트 · 옛 망은 tools/cz/net_dense0.py 로 0 무게 칸을 붙여 옮긴다)
 constexpr int MAX_ACTIVE = 96;
 
 struct NetInput {
@@ -132,7 +132,7 @@ struct Rec {
 	float z, q, aux;
 	uint32_t game;
 };
-static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 480, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
+static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 488, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다 (11-24 둘째 dense 22 → 488)");
 
 // 컵 경기처럼 정해진 선수단 — 유망주 0~4명 · 나머지 서로 다른 직업 · 선수 스탯 0~3 (학습에 섞는다)
 void random_lineup(State &s, int team, unsigned long long r);
