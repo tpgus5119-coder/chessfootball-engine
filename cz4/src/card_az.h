@@ -10,10 +10,10 @@ namespace cf {
 namespace card {
 namespace az {
 
-// ---------- 입력 (평가하는 팀이 늘 +x로 공격하게 뒤집는다) — 판 6 (옛 판 5 망은 tools/cz/net_board12.py 로 옮긴다) ----------
+// ---------- 입력 (평가하는 팀이 늘 +x로 공격하게 뒤집는다) — 판 7 = 직업 11 (옛 판 6 망은 tools/cz/net_jobs11.py 로 옮긴다) ----------
 // 칸 번호: 선수·공·존이 놓이는 입력과 수는 박스(골대 포함) 밖 NF = 80칸만 쓴다 (field_tile) · 배치는 자기 진영 박스 밖 NPL = 40칸 (place_tile)
 // 골대 안 키퍼는 칸 입력이 없다 — 숫자 입력 d[22]·d[23](골대 안)과 키퍼 표시(OFF_GK, 골대 밖일 때 그 칸)로 본다
-constexpr int NPOS = POOL_N + 1;                       // 직업 9 + 신입생 칸
+constexpr int NPOS = POOL_N + 1;                       // 직업 11 + 신입생 칸
 constexpr int NF = NT - 2 * 2 * (GOAL_N + 2);           // 80 — 박스 2×4 둘 밖
 constexpr int NPL = (W / 2) * H - 2 * (GOAL_N + 2);     // 40 — 자기 진영(x 0~5) 박스 밖
 constexpr int OFF_PIECE = 0;                           // (rel·NPOS + slot)·NF + 칸
@@ -29,7 +29,7 @@ constexpr int OFF_ZONE = OFF_CHARGE + NF;              // 태세 존 칸: rel·N
 constexpr int OFF_ACTED = OFF_ZONE + 2 * NF;           // 이번 차례에 행동한 두는 팀 선수: me·NF + 칸
 constexpr int OFF_GK = OFF_ACTED + PER_TEAM * NF;      // 골대 밖에 나온 골키퍼: rel·NF + 칸
 constexpr int SPARSE = OFF_GK + 2 * NF;
-static_assert(NF == 80 && NPL == 40 && SPARSE == 4038, "입력 칸 수 (판 6) — tools/az/train.py CF_MODE=card · tools/cz/net_board12.py 와 같게");
+static_assert(NF == 80 && NPL == 40 && SPARSE == 4366, "입력 칸 수 (판 7) — tools/az/train.py CF_MODE=card · tools/cz/net_jobs11.py 와 같게");
 constexpr int DENSE = 26;   // 숫자 입력 (card_az.cpp net_input d[0]~d[25])
 constexpr int MAX_ACTIVE = 96;
 
@@ -40,7 +40,7 @@ struct NetInput {
 };
 void net_input(const State &s, int team, NetInput &in);
 
-// ---------- 수 번호 (판 6) ----------
+// ---------- 수 번호 (판 7) ----------
 constexpr int OFF_TILE = 0;                                   // 이동·드리블·패스: (종류·PER_TEAM + me)·NF + 칸
 constexpr int OFF_SHOT = OFF_TILE + 3 * PER_TEAM * NF;        // 슛: me
 constexpr int OFF_STANCE_A = OFF_SHOT + PER_TEAM;             // 제자리 사방 태세: me
@@ -49,7 +49,7 @@ constexpr int OFF_SAVE = OFF_PLACE + (POOL_N + 1) * NPL;      // 공 없는 선�
 constexpr int OFF_KEEP = OFF_SAVE + NF;                       // 키퍼 롱킥: 받는 me·NF + 칸
 constexpr int OFF_GKIN = OFF_KEEP + PER_TEAM * NF;            // 골키퍼가 골대로 돌아감
 constexpr int NA = OFF_GKIN + 1;
-static_assert(NA == 2091, "수 칸 수 (판 6) — tools/az/train.py CF_MODE=card · tools/cz/net_board12.py 와 같게");
+static_assert(NA == 2171, "수 칸 수 (판 7) — tools/az/train.py CF_MODE=card · tools/cz/net_jobs11.py 와 같게");
 int action_index(const State &s, const Action &a);
 
 // ---------- 망 (입력 → h1 → h2 → 가치·보조·정책 머리) ----------

@@ -13,7 +13,7 @@ namespace card {
 std::vector<Event> *g_events = nullptr;
 const std::vector<V2> *g_path = nullptr;
 
-static const int DRAFT_POOL[CARD_POOL_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TARGETMAN, TITAN, HUNTER, WALL };   // 칸 번호 = 망 입력 자리
+static const int DRAFT_POOL[CARD_POOL_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TARGETMAN, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER };   // 칸 번호 = 망 입력 자리
 
 int pool_slot(int position) {
 	for (int k = 0; k < CARD_POOL_N; k++)
@@ -27,9 +27,23 @@ static void emit(const Event &e) {
 		g_events->push_back(e);
 }
 
-// ---------- 전직 혜택 (모두 상시) ----------
-// 캐논 슛이 거리로 안 약해짐 · 마에스트로 패스 힘·범위 +1 · 트릭스터 드리블이 존을 이겨도 힘 안 깎임 · 스프린터 무브 범위 +1 ·
+// ---------- 전직 혜택 (모두 상시 · 11-24 규칙 묶음 4) ----------
+// 캐논 슛 거리 감쇠 없음 + 슛 범위 +1 · 스트라이커 슛 힘 = 수치 + 4 − 2×거리 + 슛 힘 +1 · 마에스트로 패스 거리 감쇠 없음 + 패스 범위 +1 ·
+// 플레이메이커 패스 관통(존을 이겨도 힘 안 깎임) + 패스 힘 +1 · 스프린터 무브 거리 감쇠 없음 + 무브 범위 +1 · 트릭스터 드리블 관통 + 무브 힘 +1 ·
 // 타겟맨 버티기가 거리로 안 약해짐 · 헌터 디펜스 +1 · 월 태세 지속 +1 · 마커 붙은 적 범위 −1 · 타이탄 밀기
+// 성장(스탯마다 +1 한 번) = 그 스탯 힘 +1 (범위는 안 늘림 — 사용자 11-24 넷째 정정) · 예외 = 멀리형 자기 분야: 캐논 슛·마에스트로 패스·스프린터 무브 = 범위만 +1
+static int field_of(int pos) {   // 그 직업의 분야 스탯 (−1 = 없음)
+	switch (pos) {
+		case CANNON: case STRIKER: return ST_SHOT;
+		case MAESTRO: case PLAYMAKER: return ST_PASS;
+		case SPRINTER: case TRICKSTER: return ST_DRIBBLE;
+		default: return -1;
+	}
+}
+static bool reach_job(int pos) { return pos == CANNON || pos == MAESTRO || pos == SPRINTER; }   // 거리 감쇠 없음 · 범위 +1 · 성장 범위
+static int grow_pow(const Player &p, int st) { return field_of(p.position) == st && reach_job(p.position) ? 0 : p.bonus[st]; }
+static int grow_rng(const Player &p, int st) { return field_of(p.position) == st && reach_job(p.position) ? p.bonus[st] : 0; }
+static bool pierce(const Player &p, bool carry) { return p.position == (carry ? TRICKSTER : PLAYMAKER); }   // 관통: 존을 이겨도 힘이 안 깎임
 
 static void rep_add(State &s, int uid, int job) {
 	if (uid < 0 || uid >= PLAYERS)
@@ -61,7 +75,7 @@ static const Player *player_at(const State &s, V2 t) {
 	return nullptr;
 }
 
-int move_stat(const Player &p) { return std::max(1, BASE_MOVE + p.bonus[ST_DRIBBLE]); }
+int move_stat(const Player &p) { return std::max(1, BASE_MOVE + grow_pow(p, ST_DRIBBLE) + (p.position == TRICKSTER)); }
 
 // 공을 잡은 선수의 버티는 힘: 보통 = v (그 행동의 남은 힘) · 타겟맨 = flat(거리 감쇠 없는 힘에서 존에 깎인 만큼만 뺀 값) + 버티기 성장
 static int catch_hold(const Player &p, int v, int flat) { return p.position == TARGETMAN ? std::max(1, flat) + p.hold_up : v; }
@@ -116,19 +130,28 @@ bool marked(const State &s, const Player &p) {   // 상대 마커에 상하좌�
 
 // ---------- 선수 수치 ----------
 
-// 판정 힘 — 늘 1 이상. 킥·드리블: 힘 = 능력치 + 1 − 거리 (거리 0 = 공을 잡고 선 힘 = 능력치) · 캐논 슛은 늘 1칸 힘
+// 판정 힘 — 늘 1 이상. 킥·드리블: 힘 = 수치 + 1 − 거리 (거리 0 = 공을 잡고 선 힘 = 수치) ·
+// 거리 감쇠 없음(캐논 슛·마에스트로 패스·스프린터 드리블) = 늘 수치 · 스트라이커 슛 = 수치 + 4 − 2×거리
 int act_power(const State &s, const Player &p, int use, int dist) {
 	(void)s;
 	const bool kick = use == U_PASS || use == U_SHOT;
-	int v;
-	if (kick)
-		v = BASE_KICK + p.bonus[use == U_SHOT ? ST_SHOT : ST_PASS] + (use == U_PASS && p.position == MAESTRO);
-	else if (use == U_STANCE)
-		v = BASE_DEF + p.bonus[ST_DEF] + (p.position == HUNTER);
+	int v, st;
+	if (kick) {
+		st = use == U_SHOT ? ST_SHOT : ST_PASS;
+		v = BASE_KICK + grow_pow(p, st) + (use == U_SHOT ? p.position == STRIKER : p.position == PLAYMAKER);
+	} else if (use == U_STANCE)
+		st = ST_DEF, v = BASE_DEF + p.bonus[ST_DEF] + (p.position == HUNTER);
 	else
-		v = move_stat(p);
-	if (kick || use == U_DRIBBLE)
-		v += 1 - (use == U_SHOT && p.position == CANNON ? 1 : std::max(1, dist));
+		st = ST_DRIBBLE, v = move_stat(p);
+	if (kick || use == U_DRIBBLE) {
+		const int d = std::max(1, dist);
+		if (field_of(p.position) == st && reach_job(p.position))
+			;   // 거리 감쇠 없음
+		else if (use == U_SHOT && p.position == STRIKER)
+			v += 4 - 2 * d;
+		else
+			v += 1 - d;
+	}
 	if (p.charge == 2 && use != U_MOVE)
 		v += 1;   // 「강하게」 = 힘 +1 (패스·슛·드리블·디펜스 — 이동은 범위만)
 	return std::max(1, v);
@@ -140,15 +163,10 @@ bool grow_ok(int pos, const int st[GROW_K], int k) {
 	return k != 4 || pos == WALL || pos == TARGETMAN;   // 특수 성장 = 월 지속 +1 · 타겟맨 버티기 +1 (나머지 직업은 스탯 성장 넷뿐)
 }
 
-// 성장 = 그 스탯 범위 +1 (트릭스터 무브 성장만 힘뿐 — 스프린터와 구분) · 전직 마에스트로 패스 · 스프린터 무브 +1 · 「강하게」 +1 · 마커 곁 −1
+// 범위 = 기본 + 성장(멀리형 자기 분야만 — grow_rng) + 전직 범위 +1(캐논 슛·마에스트로 패스·스프린터 무브) · 「강하게」 +1 · 마커 곁 −1
 int act_range(const State &s, const Player &p, int want) {
-	int r;
-	if (want == C_SHOT)
-		r = KICK_RANGE + p.bonus[ST_SHOT];
-	else if (want == C_KICK)
-		r = KICK_RANGE + p.bonus[ST_PASS] + (p.position == MAESTRO);
-	else
-		r = MOVE_RANGE + (p.position == TRICKSTER ? 0 : p.bonus[ST_DRIBBLE]) + (p.position == SPRINTER);
+	const int st = want == C_SHOT ? ST_SHOT : want == C_KICK ? ST_PASS : ST_DRIBBLE;
+	int r = (want == C_MOVE ? MOVE_RANGE : KICK_RANGE) + grow_rng(p, st) + (field_of(p.position) == st && reach_job(p.position));
 	if (p.charge == 2)
 		r += 1;
 	if (marked(s, p))
@@ -551,6 +569,7 @@ struct Foe {
 	const int *zone;   // null = 경합 없음 (공 없는 이동)
 	int uid, val;
 	bool carry;   // 공을 든 선수가 뺏기는 칸에 선다 (드리블) — 사이 아군에서 자신은 뺀다
+	bool thru = false;   // 관통 — 존을 이겨도 힘이 안 깎임 (트릭스터 드리블 · 플레이메이커 패스)
 };
 
 // 엔진 기본 길의 순서 (망이 있으면 화면·AI 는 간 뒤의 상태로 고른다: value_path). 작을수록 좋다:
@@ -587,8 +606,8 @@ static PathKey path_key(const Foe *f, const std::vector<V2> &p) {
 			k.near = -goal_dist(me.team, t);   // 우리 골에서 가까울수록 나쁨
 			break;
 		}
-		if (!(f->carry && me.position == TRICKSTER))
-			cur -= s.players[du].stance;   // 이긴 만큼 남음 · 트릭스터 드리블은 안 깎임
+		if (!f->thru)
+			cur -= s.players[du].stance;   // 이긴 만큼 남음 · 관통(트릭스터 드리블·플레이메이커 패스)은 안 깎임
 	}
 	k.left = k.lose ? 0 : -cur;
 	return k;
@@ -743,7 +762,7 @@ static V2 dribble_run(State &s, int uid, int &val, const std::vector<V2> &path) 
 			mark_steal(s);
 			return t;
 		}
-		if (s.players[uid].position != TRICKSTER)
+		if (!pierce(s.players[uid], true))
 			val -= s.players[du].stance;   // 트릭스터 = 이겨도 힘이 안 깎여 다음 존도 처음 힘으로
 		s.players[du].stance = 0;
 		s.players[du].stance_left = 0;
@@ -842,7 +861,7 @@ static bool do_dribble(State &s, int uid, V2 dest) {
 	bool blocked[NT];
 	body_blocked(s, p.team, blocked);
 	int pow = act_power(s, p, U_DRIBBLE, manhattan(p.pos, dest));   // 드리블 힘 = 가는 거리에 반비례
-	const Foe f{ &s, zone, uid, pow, true };
+	const Foe f{ &s, zone, uid, pow, true, pierce(p, true) };
 	std::vector<V2> path = route(p.pos, dest, act_range(s, p, C_MOVE), &f, blocked, UNSET);
 	const int flat = act_power(s, p, U_DRIBBLE);   // 타겟맨 버티기 = 거리 감쇠 없는 무브 수치
 	if (path.empty())
@@ -884,7 +903,7 @@ static bool pass_dest_ok(const State &s, const Player &p, V2 t) {
 	return r && r->team == p.team && r->uid != p.uid;
 }
 
-static bool send_ball(State &s, const Player &p, int &val, const std::vector<V2> &path) {   // true = 끊겼다 · val = 남은 힘
+static bool send_ball(State &s, const Player &p, int &val, const std::vector<V2> &path, bool pass) {   // true = 끊겼다 · val = 남은 힘 · pass = 패스(관통 가능)
 	int zone[NT];
 	build_zone(s, opponent(p.team), zone);
 	bool met[PLAYERS] = {};
@@ -898,7 +917,8 @@ static bool send_ball(State &s, const Player &p, int &val, const std::vector<V2>
 			mark_steal(s);
 			return true;
 		}
-		val -= s.players[du].stance;   // 이긴 만큼 남음
+		if (!(pass && pierce(p, false)))
+			val -= s.players[du].stance;   // 이긴 만큼 남음 · 플레이메이커 패스는 안 깎임
 		s.players[du].stance = 0;
 		s.players[du].stance_left = 0;
 	}
@@ -917,7 +937,7 @@ static std::vector<V2> kick_path(const State &s, const Player &p, V2 dest, int p
 	build_zone(s, opponent(p.team), zone);
 	bool blocked[NT];
 	body_blocked(s, p.team, blocked);
-	const Foe f{ &s, zone, p.uid, pow, false };
+	const Foe f{ &s, zone, p.uid, pow, false, pierce(p, false) };
 	return route(p.pos, dest, rng, &f, blocked, UNSET);
 }
 
@@ -939,7 +959,7 @@ static bool do_pass(State &s, int uid, V2 dest) {
 	if (s.ball_owner == -1)
 		set_owner(s, uid);
 	pay_point(s);
-	if (!send_ball(s, p, pow, path)) {
+	if (!send_ball(s, p, pow, path, true)) {
 		set_owner(s, ru);
 		s.hold = catch_hold(s.players[ru], pow, flat - (pow0 - pow));   // 받은 선수 버티는 힘 = 그 패스의 남은 힘 · 타겟맨 = 존에 깎인 만큼만
 	}
@@ -984,7 +1004,7 @@ static bool do_shot(State &s, int uid) {
 	const int team = p.team;
 	emit({ 4, uid, -1, goal, pow, 2, 0, path });
 	pay_point(s);
-	if (send_ball(s, p, pow, path)) {
+	if (send_ball(s, p, pow, path, false)) {
 		after_action(s, team);
 		return true;
 	}

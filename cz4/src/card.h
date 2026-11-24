@@ -3,7 +3,7 @@
 // 게임 화면(CardNative 바인딩)과 자가학습(card_az · tools/cz)이 같은 코드를 쓴다 — 규칙이 두 벌이면 언젠가 어긋난다.
 //
 // 요약: 수 = 선수 고르기 → 행동(이동·드리블·패스·슛·태세·「강하게」·키퍼 롱킥) → 칸. 차례마다 포인트 2 · 차례 끝 수 없음(포인트를 다 쓴다).
-// 스탯 = 디펜스 3 · 무브 4 · 패스 5 · 슛 5 + 성장(그 스탯 힘·범위 +1) + 전직 혜택. 힘 = 능력치 + 1 − 거리 · 범위 = 능력치.
+// 스탯 = 디펜스 3 · 무브 4 · 패스 5 · 슛 5 + 성장(그 스탯 힘 +1 — 멀리형 자기 분야만 범위 +1) + 전직 혜택. 힘 = 능력치 + 1 − 거리 · 범위 = 능력치.
 // 경합(존·태클·슛 대 골대 체력)은 거는 쪽 힘 > 당하는 쪽 힘일 때만 이긴다 (동점 = 당하는 쪽).
 #include "engine.h"
 
@@ -16,7 +16,7 @@ constexpr int CARD_HALF_TURNS = 60;   // 한 판 = 두 팀 합 60차례 (팀당 
 constexpr int WIN_GOALS = 3;          // 먼저 3골이면 바로 끝
 enum CardType { C_KICK = 0, C_MOVE = 1, C_DEF = 2, C_SHOT = 3 };   // act_range 의 범위 종류 — C_KICK = 패스 · C_SHOT = 슛
 enum Role { R_ATK = 0, R_DEF = 1 };   // 공 가진 팀 = 공격
-constexpr int CARD_POOL_N = 9;        // 직업 9
+constexpr int CARD_POOL_N = 11;       // 직업 11
 
 constexpr int BASE_KICK = 5, BASE_DEF = 3, BASE_MOVE = 4;   // 패스·슛 5 · 디펜스 3 · 무브(이동·드리블) 4
 constexpr int MOVE_RANGE = BASE_MOVE;

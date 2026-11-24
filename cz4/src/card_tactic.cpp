@@ -51,14 +51,18 @@ void set_roles() {
 	put(0, MARKER, { 4, 6, 4, 6, R_MARK });
 	put(0, SPRINTER, { 5, 7, 7, 9, R_RUN });
 	put(0, CANNON, { 5, 7, 6, 8, R_FIN });
+	put(0, STRIKER, { 5, 7, 7, 9, R_FIN });
 	put(0, TRICKSTER, { 4, 6, 5, 8, R_CARRY });
 	put(0, MAESTRO, { 4, 5, 4, 6, R_LINK });
+	put(0, PLAYMAKER, { 4, 6, 5, 7, R_LINK });
 	put(0, WALL, { 2, 4, 3, 4, R_REST });
 	put(0, TITAN, { 3, 4, 3, 5, R_REST });
 	put(1, MAESTRO, { 4, 5, 4, 6, R_LINK });
+	put(1, PLAYMAKER, { 4, 5, 5, 7, R_LINK });
 	put(1, TRICKSTER, { 4, 5, 5, 7, R_CARRY });
 	put(1, SPRINTER, { 4, 5, 5, 8, 0 });
 	put(1, CANNON, { 5, 6, 6, 8, R_FIN });
+	put(1, STRIKER, { 5, 6, 7, 9, R_FIN });
 	put(1, HUNTER, { 3, 5, 4, 5, R_PRESS1 });
 	put(1, MARKER, { 3, 5, 4, 5, R_MARK });
 	put(1, WALL, { 2, 4, 3, 4, R_REST });
@@ -68,8 +72,10 @@ void set_roles() {
 	put(2, MARKER, { 1, 3, 2, 3, R_MARK });
 	put(2, TITAN, { 1, 2, 1, 3, R_REST });
 	put(2, MAESTRO, { 2, 4, 3, 5, R_LINK });
+	put(2, PLAYMAKER, { 3, 4, 4, 6, R_LINK });
 	put(2, SPRINTER, { 4, 5, 6, 9, R_RUN | R_OUTLET });
 	put(2, CANNON, { 3, 4, 5, 7, R_FIN });
+	put(2, STRIKER, { 3, 4, 6, 8, R_FIN });
 	put(2, TRICKSTER, { 3, 4, 4, 7, R_CARRY });
 }
 struct Init {
