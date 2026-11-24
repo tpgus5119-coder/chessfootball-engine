@@ -18,7 +18,7 @@ namespace card {
 
 constexpr int CARD_HALF_TURNS = 60;   // 한 판 = 팀당 30차례 · 전후반 없음 (11-24 사용자 「전후반 없애고 ㄱ」) — 이름은 옛것(반 = 경기 하나)
 constexpr int WIN_GOALS = 3;          // 먼저 3골이면 바로 끝 (11-24)
-constexpr int RECEIVE_HOLD = 3;   // 리시버가 공을 잡을 때 버티는 힘
+constexpr int RECEIVE_HOLD = 4;   // 리시버가 공을 잡을 때 버티는 힘 (11-24 사용자 「버티기 4 전직 혜택 · 메인 스탯업 +1」)
 constexpr int GK_DEF0 = 3, GK_KICK0 = 4, GK_RANGE0 = 4;   // 골키퍼 기본: 디펜스(= 체력) 3 · 킥 힘 4 · 킥 범위 4 (11-24 사용자)
 extern int g_time_input;   // 0 = 망 입력에서 시간(반 진행·후반)을 0 으로 (자가학습 CF_NO_TIME)
 extern int g_half_turns;   // 반 길이(두 팀 합 차례) — 자가학습만 CF_HALF_TURNS 로 바꾼다

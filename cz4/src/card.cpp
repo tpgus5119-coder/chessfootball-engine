@@ -1043,7 +1043,7 @@ static void auto_tackle(State &s, int tuid) {   // 곁에서 디펜스 = 제자�
 // ---------- 액션 ----------
 
 static bool can_act(const State &s, const Player &p) {
-	return s.phase == PLAY && s.keeper != s.turn_team && p.placed() && p.team == s.turn_team && s.pts >= 1;   // (우리 키퍼가 공을 쥐고 있으면 롱킥부터) · 한 선수가 여러 번 행동해도 된다 (11-23 사용자 「다 ㄱ」 — 옛 한 선수 행동 하나 없앰)
+	return s.phase == PLAY && p.placed() && p.team == s.turn_team && s.pts >= 1;   // (우리 키퍼가 공을 쥐고 있으면 롱킥 · 찰 곳이 없으면 이동만 — keep_gate) · 한 선수가 여러 번 행동해도 된다 (11-23 사용자 「다 ㄱ」 — 옛 한 선수 행동 하나 없앰)
 }
 
 static bool may_carry(const State &s, const Player &p) {   // 공 임자 · 킥오프 차례면 킥오프 팀 누구나
@@ -1173,12 +1173,13 @@ static void pass_targets(const State &s, const Player &p, int rng, Reach &ground
 // 스루패스 = 앞쪽 **빈 칸**으로 차는 패스(1포인트) — 누구나 (11-23 사용자 「스루패스 모두 가능」). 공은 그 칸에 루즈볼로 남고,
 // 동료가 이동으로 주워야 내 공이 된다(그것도 포인트 1 · 그 동료의 행동). 칸 조건: 앞쪽 빈 칸 · 박스·골대 아님 · 동료(차는 선수 말고) 하나가 뛰어 닿음 ·
 // **차는 수가 이번 차례 마지막 포인트면 적 누구의 이동 범위에도 들지 않는 칸** (상대가 먼저 줍지 못하게 — 줍는 건 다음 우리 차례)
-static bool through_ok(const State &s, const Player &p, V2 t) {
-	if (!in_bounds(t) || player_at(s, t) || is_any_box(t) || is_goal(t) || (t.x - p.pos.x) * forward_dir(p.team) <= 0)
+// 루즈볼 칸 조건 (스루패스·키퍼 롱킥 같음): 빈 칸 · 박스·골대 아님 · 찬 선수 말고 동료 하나가 뛰어 닿음 · 마지막 포인트면 적 이동 범위 밖
+static bool loose_ok(const State &s, int team, int kicker, V2 t) {
+	if (!in_bounds(t) || player_at(s, t) || is_any_box(t) || is_goal(t))
 		return false;
 	bool mate = false;
 	for (const Player &m : s.players)
-		if (m.team == p.team && m.uid != p.uid && m.placed() && manhattan(m.pos, t) <= act_range(s, m, C_MOVE)) {
+		if (m.team == team && m.uid != kicker && m.placed() && manhattan(m.pos, t) <= act_range(s, m, C_MOVE)) {
 			bool blocked[NT];
 			path_blocked(s, m.team, m.uid, false, blocked);
 			if (!best_path(m.pos, t, act_range(s, m, C_MOVE), nullptr, blocked, UNSET).empty()) {
@@ -1190,9 +1191,13 @@ static bool through_ok(const State &s, const Player &p, V2 t) {
 		return false;
 	if (s.pts <= 1)
 		for (const Player &q : s.players)
-			if (q.team != p.team && q.placed() && manhattan(q.pos, t) <= act_range(s, q, C_MOVE))
+			if (q.team != team && q.placed() && manhattan(q.pos, t) <= act_range(s, q, C_MOVE))
 				return false;   // 마지막 포인트 = 적 이동 범위 밖만
 	return true;
+}
+
+static bool through_ok(const State &s, const Player &p, V2 t) {
+	return (t.x - p.pos.x) * forward_dir(p.team) > 0 && loose_ok(s, p.team, p.uid, t);   // 스루패스 = 앞쪽 루즈볼 칸
 }
 
 static bool pass_dest_ok(const State &s, const Player &p, V2 t) {
@@ -1338,28 +1343,38 @@ static bool do_shot(State &s, int uid) {
 	return true;
 }
 
-// 키퍼 롱킥 (11-24 사용자 「액포 1 · 킥 범위 · 버티는 힘」): 키퍼가 쥔 공을 골대에서 킥 범위 안 아군 한 명 발밑으로 (공중볼 · 경합 없음 · 포인트 1)
-// 받은 선수 버티는 힘 = 키퍼 킥 + 1 − 거리 (패스와 같은 거리 감쇠). 범위 안에 아무도 없으면 골대에 가장 가까운 아군만
+// 키퍼 롱킥 (11-24 사용자 최종): 키퍼가 쥔 공을 킥 범위(골대 두 칸 중 가까운 칸에서 — goal_dist) 안으로 (공중볼 · 경합 없음 · 포인트 1).
+// ① 아군 발밑 — 받은 선수 버티는 힘 = 키퍼 킥 + 1 − 거리 ② 빈 칸 = 루즈볼 (스루패스와 같은 칸 조건 loose_ok · 동료가 저절로 달려가 받음).
+// 찰 곳이 없으면 이동만 열린다(아군이 내려와 받음) — 찰 곳이 생기면 다음 수는 롱킥뿐 (enumerate_actions)
 static bool keep_ok(const State &s, const Player &q) {
 	const int team = s.keeper;
-	if (q.team != team || !q.placed() || is_any_box(q.pos))
-		return false;
-	if (goal_dist(team, q.pos) <= s.gk_range[team])
-		return true;
-	for (const Player &o : s.players)   // 범위 안에 아무도 없으면 가장 가까운 아군 (공이 멈추지 않게)
-		if (o.team == team && o.placed() && !is_any_box(o.pos) && goal_dist(team, o.pos) <= s.gk_range[team])
-			return false;
-	int best = 1 << 20;
-	for (const Player &o : s.players)
-		if (o.team == team && o.placed() && !is_any_box(o.pos))
-			best = std::min(best, goal_dist(team, o.pos));
-	return goal_dist(team, q.pos) == best;
+	return q.team == team && q.placed() && !is_any_box(q.pos) && goal_dist(team, q.pos) <= s.gk_range[team];
 }
 
-static bool do_keep(State &s, int uid) {
-	if (s.phase != PLAY || s.keeper != s.turn_team || s.pts < 1 || uid < 0 || uid >= PLAYERS || !keep_ok(s, s.players[uid]))
+static bool keep_loose_ok(const State &s, V2 t) {
+	return in_bounds(t) && goal_dist(s.keeper, t) <= s.gk_range[s.keeper] && loose_ok(s, s.keeper, -1, t);
+}
+
+static bool do_keep(State &s, int uid, V2 dest) {
+	if (s.phase != PLAY || s.keeper != s.turn_team || s.pts < 1)
 		return false;
 	const int team = s.keeper;
+	if (uid < 0) {   // 빈 칸 롱킥 = 루즈볼
+		if (!keep_loose_ok(s, dest))
+			return false;
+		const int pow = std::max(1, s.gk_kick[team] + 1 - goal_dist(team, dest));
+		emit({ 4, -1, -1, dest, pow, 3, 0, { dest } });
+		s.keeper = -1;
+		s.ball_owner = -1;
+		s.ball_pos = dest;
+		s.loose_team = team, s.loose_by = -1;
+		s.hold = 0;
+		pay_point(s);
+		after_action(s, team);
+		return true;
+	}
+	if (uid >= PLAYERS || !keep_ok(s, s.players[uid]))
+		return false;
 	const Player &q = s.players[uid];
 	const int pow = std::max(1, s.gk_kick[team] + 1 - goal_dist(team, q.pos));
 	emit({ 4, -1, uid, q.pos, pow, 3, 0, { q.pos } });   // 사건 4 · vb 3 = 키퍼 롱킥 (a = −1 · b = 받는 선수 · at = 받는 칸 · va = 힘)
@@ -1419,7 +1434,19 @@ int eff_hold(const State &s) { return s.hold; }
 
 static bool apply_inner(State &s, const Action &a);
 // 직업 스킬 (옛 게이지 — 11-19 상시라 a.sk 는 늘 0, 0 아니면 거른다)
+static bool keep_target(const State &s) {   // 우리 키퍼가 찰 곳이 하나라도 있나
+	for (const Player &q : s.players)
+		if (keep_ok(s, q))
+			return true;
+	for (int i = 0; i < NT; i++)
+		if (keep_loose_ok(s, V2{ i % W, i / W }))
+			return true;
+	return false;
+}
+
 bool apply_action(State &s, const Action &a) {
+	if (s.phase == PLAY && s.keeper == s.turn_team && a.t != A_KEEP && (a.t != A_MOVE || keep_target(s)))
+		return false;   // 키퍼가 공을 쥔 차례: 찰 곳이 있으면 롱킥뿐 · 없으면 이동만 (11-24)
 	if (a.sk) {
 		if (a.sk < 0 || a.sk > SK_KINDS_MAX || a.t < A_MOVE || a.t > A_STANCE || a.uid < 0 || a.uid >= PLAYERS || s.phase != PLAY || !skill_can(s, s.players[a.uid]) ||
 				!skill_act(s.players[a.uid].position, a.t, a.sk))
@@ -1566,7 +1593,7 @@ static bool apply_one(State &s, const Action &a) {
 		case A_PASS: return u && spend_charge(s, a.uid, do_pass(s, a.uid, a.dest));
 		case A_SHOT: return u && spend_charge(s, a.uid, do_shot(s, a.uid));
 		case A_STANCE: return u && (s.ball_owner == a.uid ? do_stance(s, a.uid, a.dest) : spend_charge(s, a.uid, do_stance(s, a.uid, a.dest)));
-		case A_KEEP: return do_keep(s, a.uid);
+		case A_KEEP: return do_keep(s, a.uid, a.dest);
 		case A_SAVE: return u && s.ball_owner != a.uid && do_charge(s, a.uid, a.dest);   // 공 없는 선수 「강하게」 (옛 키퍼 킥 번호)
 	}
 	return false;   // 차례 끝 수는 없다 (11-21 사용자 — 포인트를 다 쓴다, 둘 수가 없을 때만 저절로 끝)
@@ -1596,11 +1623,17 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 	if (s.phase != PLAY || s.pts < 1)
 		return;
 	const int team = s.turn_team;
-	if (s.keeper == team) {   // 우리 키퍼가 공을 쥐고 있다 — 롱킥뿐 (킥 범위 안 아군 고르기, 11-24)
+	if (s.keeper == team) {   // 우리 키퍼가 공을 쥐고 있다 — 롱킥뿐 (킥 범위 안 아군 · 루즈볼 칸, 11-24) · 찰 곳이 없으면 이동만
 		for (const Player &q : s.players)
 			if (keep_ok(s, q))
 				out.push_back({ A_KEEP, q.uid, q.pos, -1, 0 });
-		return;
+		for (int i = 0; i < NT; i++) {
+			const V2 t{ i % W, i / W };
+			if (keep_loose_ok(s, t))
+				out.push_back({ A_KEEP, -1, t, -1, 0 });
+		}
+		if (!out.empty())
+			return;
 	}
 	const bool ko = kickoff_turn(s);
 	auto gen = [&](const Player &q, int sk) {   // sk = Action.sk (0 = 스킬 없음 · 만능은 1·2 둘 다)
@@ -1681,6 +1714,14 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 		if (skill_can(s, q))
 			for (int k = 1; k <= (q.position == ALLROUND ? 2 : 1); k++)
 				gen(q, k);
+	}
+	if (s.keeper == team) {   // 찰 곳이 없다 — 아군 이동만 (11-24 사용자 「받을 선수가 없다면 이동만 오픈」)
+		std::vector<Action> mv;
+		for (const Action &a : out)
+			if (a.t == A_MOVE)
+				mv.push_back(a);
+		out.swap(mv);
+		return;
 	}
 	if (s.loose_ball() && s.loose_team == team) {   // 스루패스 = 저절로 달려가 받기 (11-24 사용자) — 루즈볼 칸으로 뛰어 닿는 동료(찬 선수 빼고)의 이동만 (여럿이면 고르기 · 포인트가 없으면 다음 우리 차례 처음). 아무도 못 닿으면 보통 수
 		std::vector<Action> run;

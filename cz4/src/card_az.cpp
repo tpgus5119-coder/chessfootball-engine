@@ -181,7 +181,7 @@ int action_index(const State &s, const Action &a) {
 				return -1;
 			return OFF_PLACE + a.uid * NT + flip_tile(a.dest, team);
 		case A_KEEP: {   // 키퍼 롱킥 (11-23): 받는 아군 × 그 칸
-			const int me = a.uid - PER_TEAM * team;
+			const int me = a.uid < 0 ? PER_TEAM - 1 : a.uid - PER_TEAM * team;   // 빈 칸 롱킥(루즈볼, 11-24) = 안 쓰던 다섯째 자리
 			if (me < 0 || me >= PER_TEAM || !in_bounds(a.dest))
 				return -1;
 			return OFF_SAVE_RUN + me * NT + flip_tile(a.dest, team);
