@@ -147,7 +147,7 @@ static void sync_roles(State &s) {
 		s.role[t] = t == bt ? R_ATK : R_DEF;
 }
 
-bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 모든 판정 힘 −1 (11-23 사용자 — 범위 −1 없앰 · 겹치지 않음 · 공 든 마커는 꺼짐)
+bool marked(const State &s, const Player &p) {   // 상대 마커(공 없음)에 상하좌우로 붙었다 — 범위 −1 (11-24 사용자 정정 — 힘은 그대로 · 겹치지 않음 · 공 든 마커는 꺼짐)
 	if (!p.placed())
 		return false;
 	for (const Player &m : s.players)
@@ -192,8 +192,6 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 		v += 1 - dd;   // 힘 = 능력치 + 1 − 거리 (킥·드리블 같은 식 — 11-22, 킥 4 · 무브 3)
 	if (p.charge == 2 && use != U_MOVE)
 		v += 1;   // 「강하게」 = 포인트 2개로 힘 +1 (패스·슛·드리블·디펜스 — 이동은 없음)
-	if (marked(s, p))
-		v -= 1;   // 마커 곁 = 모든 판정 힘 −1 (슛·패스·드리블·디펜스 — 11-23 사용자 「인접 1칸 적 스탯 −1 · 공 들면 못 잡음 유지」 · 겹치지 않음)
 	return std::max(1, v);
 }
 
@@ -218,6 +216,10 @@ int act_range(const State &s, const Player &p, int want, int skl) {
 		r = MOVE_RANGE + p.range_up;          // 무브 범위 3 고정 — 힘(무브 수치)과 따로 (11-22 사용자) · 스프린터 성장 (perks)
 	if (sr)
 		r += g_range_bonus;   // 마에스트로 패스 · 스프린터 무브 범위 +1 (11-22)
+	if (p.charge == 2)
+		r += 1;   // 「강하게」 = 그 행동(패스·슛·드리블·이동) 범위 +1 (11-24 사용자 — 태세는 힘만)
+	if (marked(s, p))
+		r -= 1;   // 마커 곁 = 이동·드리블·패스·슛 범위 −1 (11-24 사용자 — 힘 −1 아님 · 겹치지 않음 · 최소 1)
 	return std::max(1, r);
 }
 
@@ -1230,7 +1232,7 @@ static bool can_stance(const State &s, const Player &p);
 static bool charge_ok(const State &s, const Player &p) {
 	if (p.charge != 0 || s.pts < 2 || !can_act(s, p) || kickoff_turn(s))
 		return false;
-	return s.ball_owner == p.uid || can_stance(s, p);   // 공 임자 = 이어서 패스·슛·드리블 · 공 없는 선수 = 이어서 디펜스 (11-23 강하게 이동 없앰)
+	return true;   // 공 임자 = 이어서 패스·슛·드리블 · 공 없는 선수 = 이어서 이동·디펜스 (11-24 「강하게」 = 힘 +1 · 범위 +1 — 이동도)
 }
 
 static bool do_charge(State &s, int uid, V2 dest) {
@@ -1395,7 +1397,7 @@ bool value_path(const State &s, const Action &a, PathValue val, const void *ctx,
 
 static bool apply_one(State &s, const Action &a);
 
-static bool spend_charge(State &s, int uid, bool ok) {   // 모은 힘은 그 선수의 첫 패스·슛·드리블·디펜스 1번에 쓴다
+static bool spend_charge(State &s, int uid, bool ok) {   // 모은 힘은 그 선수의 첫 패스·슛·드리블·이동·디펜스 1번에 쓴다
 	if (ok && s.players[uid].charge == 2)
 		s.players[uid].charge = 0;
 	return ok;
@@ -1415,7 +1417,7 @@ static bool apply_one(State &s, const Action &a) {
 	const bool u = a.uid >= 0 && a.uid < PLAYERS;
 	switch (a.t) {
 		case A_PLACE: return do_place(s, a.uid, a.dest);
-		case A_MOVE: return u && s.players[a.uid].charge == 0 && do_move(s, a.uid, a.dest);   // 이동은 「강하게」 없음 (11-23 다가가 태클 없앰)
+		case A_MOVE: return u && spend_charge(s, a.uid, do_move(s, a.uid, a.dest));   // 「강하게」 이동 = 이동 범위 +1 (11-24)
 		case A_DRIBBLE: return u && spend_charge(s, a.uid, do_dribble(s, a.uid, a.dest));
 		case A_PASS: return u && spend_charge(s, a.uid, do_pass(s, a.uid, a.dest));
 		case A_SHOT: return u && spend_charge(s, a.uid, do_shot(s, a.uid));
@@ -1477,7 +1479,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 				if (carry) {
 					if (player_at(s, t) || is_any_box(t))
 						continue;
-				} else if (ko || s.ball_owner == u || q.charge || !move_dest_ok(s, q, t)) {   // 모은 선수는 이동 없음 (디펜스만)
+				} else if (ko || s.ball_owner == u || !move_dest_ok(s, q, t)) {
 					continue;
 				}
 				if (!carry && s.loose_ball() && is_any_box(t)) {
