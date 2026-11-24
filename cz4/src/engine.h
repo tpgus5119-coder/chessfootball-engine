@@ -9,7 +9,7 @@ namespace cf {
 
 constexpr int W = 11, H = 8, NT = W * H;          // board.gd — 11-23 사용자 「11×8 ㄱㄱ · 골대 2칸 · 박스 2×4」 (옛 10×7 · 골대 1칸) · 가운데 줄 x 5 는 누구 진영도 아님
 constexpr int GOAL_Y0 = H / 2 - 1, GOAL_N = 2;    // 골대 = 끝줄 가운데 두 칸 (y 3·4)
-constexpr int PLAYERS = 10, PER_TEAM = 5;   // v5.68: 5대5 (game_state.gd PLAYERS_PER_TEAM)
+constexpr int PER_TEAM = 4, PLAYERS = 2 * PER_TEAM;   // 4대4 — uid 홈 0~3 · 원정 4~7 (11-24 옛 5대5 다섯째 자리 없앰 · game_state.gd PLAYERS_PER_TEAM)
 constexpr int POOL_N = 10;                  // v7.0 드래프트 풀 종류 수 (card_az.h 슬롯)
 constexpr int POINTS_PER_TURN = 2;   // 차례마다 포인트
 constexpr int LONG_PASS_MIN = 5;                   // ball_actions.gd (v5.12)

@@ -11,15 +11,10 @@ using namespace godot;
 namespace ck = cf::card;
 
 static ck::az::Net g_card_net;   // 프로세스에 망 하나
-// 화면과 주고받는 수: [종류, uid, x, y, 다섯째] 5칸 — 다섯째 = 뒷공간 패스(A_RUN)의 받을 동료 uid (11-21, 없으면 −1),
-// 그 밖은 옛 스킬 칸(늘 0 — 11-19 직업 능력 상시)
-static bool mate_act(int t) { return t == ck::A_RUN; }
+// 화면과 주고받는 수: [종류, uid, x, y, 다섯째] 5칸 — 다섯째 = 옛 스킬 칸(늘 0 — 11-19 직업 능력 상시)
 static ck::Action dec_action(int t, int uid, int dx, int dy, int x5) {
 	ck::Action a{ t, uid, { dx, dy }, -1 };
-	if (mate_act(t))
-		a.mate = x5;
-	else
-		a.sk = std::max(0, std::min(ck::SK_KINDS_MAX, x5));
+	a.sk = std::max(0, std::min(ck::SK_KINDS_MAX, x5));
 	return a;
 }
 static void put_action(PackedInt32Array &out, const ck::Action &a) {
@@ -27,7 +22,7 @@ static void put_action(PackedInt32Array &out, const ck::Action &a) {
 	out.push_back(a.uid);
 	out.push_back(a.dest.x);
 	out.push_back(a.dest.y);
-	out.push_back(mate_act(a.t) ? a.mate : a.sk);
+	out.push_back(a.sk);
 }
 
 void CardNative::_bind_methods() {

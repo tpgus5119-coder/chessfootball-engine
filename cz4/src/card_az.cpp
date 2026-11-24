@@ -14,9 +14,24 @@ namespace az {
 
 static inline int flip_tile(V2 t, int team) { return t.y * W + (team == AWAY ? W - 1 - t.x : t.x); }
 
-static inline void add(NetInput &in, int i) {
-	if (in.n < MAX_ACTIVE)
-		in.idx[in.n++] = uint16_t(i);
+// 칸 → 입력·수 칸 번호 (뒤집은 칸 기준): 박스 밖 72칸 · 자기 진영 박스 밖 32칸 (−1 = 그 칸 없음)
+static const struct Tiles {
+	int8_t field[NT], place[NT];
+	Tiles() {
+		int nf = 0, np = 0;
+		for (int t = 0; t < NT; t++) {
+			const V2 v{ t % W, t / W };
+			const bool box = is_any_box(v);
+			field[t] = int8_t(box ? -1 : nf++);
+			place[t] = int8_t(box || v.x >= W / 2 ? -1 : np++);
+		}
+	}
+} g_tiles;
+static inline int ftile(V2 t, int team) { return in_bounds(t) ? g_tiles.field[flip_tile(t, team)] : -1; }
+
+static inline void add(NetInput &in, int base, int f) {   // f < 0 = 박스 칸 (선수·공·존은 거기 안 선다 — 입력 없음)
+	if (f >= 0 && in.n < MAX_ACTIVE)
+		in.idx[in.n++] = uint16_t(base + f);
 }
 
 void net_input(const State &s, int team, NetInput &in) {
@@ -32,47 +47,34 @@ void net_input(const State &s, int team, NetInput &in) {
 		const int sl = slot < 0 ? NPOS - 1 : slot;
 		const int rel = q.team == team ? 0 : 1;
 		if (!q.placed()) {
-			add(in, OFF_UNPLACED + rel * NPOS + sl);
-			if (q.position == ALLROUND)
-				add(in, OFF_ALLROUND + 2 * NT + rel);
+			add(in, OFF_UNPLACED + rel * NPOS, sl);
 			continue;
 		}
-		const int tile = flip_tile(q.pos, team);
-		add(in, OFF_PIECE + (rel * NPOS + sl) * NT + tile);
+		const int f = ftile(q.pos, team);
+		add(in, OFF_PIECE + (rel * NPOS + sl) * NF, f);
 		if (q.stance > 0)
-			add(in, OFF_STANCE + (rel * 4 + std::max(0, std::min(3, q.stance - 1))) * NT + tile);
-		if (q.jk_up)
-			add(in, OFF_FWDMOVED + rel * NT + tile);   // 족보 +1 토큰 (11-21 — 옛 빈 칸 재사용)
-		if (q.stance > 0 && q.stance_left >= 2)
-			add(in, OFF_LASTPASS + rel * NT + tile);   // 태세가 한 차례 더 남음 (월 2차례 — 옛 빈 칸 재사용)
+			add(in, OFF_STANCE + (rel * 3 + std::max(0, std::min(2, q.stance - 2))) * NF, f);
 		if (s.ball_owner == q.uid)
-			add(in, OFF_BALL + rel * NT + tile);
+			add(in, OFF_BALL + rel * NF, f);
 		if (marked(s, q))
-			add(in, OFF_MARKED + rel * NT + tile);
+			add(in, OFF_MARKED + rel * NF, f);
 		for (int k = 0; k < 4; k++)
 			if (q.bonus[k] > 0)
-				add(in, OFF_PSTAT + ((rel * 4 + k) * 3 + std::min(3, q.bonus[k]) - 1) * NT + tile);
+				add(in, OFF_PSTAT + (rel * 4 + k) * NF, f);
 		if (q.range_up > 0)
-			add(in, OFF_PERK + (rel * 2 + 0) * NT + tile);
+			add(in, OFF_PERK + (rel * 2 + 0) * NF, f);
 		if (q.kick_range_up > 0)
-			add(in, OFF_PERK + (rel * 2 + 1) * NT + tile);
+			add(in, OFF_PERK + (rel * 2 + 1) * NF, f);
 		if (q.hold_up > 0)
-			add(in, OFF_BOOSTED + rel * NT + tile);   // 월 지속 성장 (11-22 셋째 — 옛 부스터 빈 칸)
-		if (q.charge)
-			add(in, OFF_LASTPASS + (2 + rel) * NT + tile);   // 「강하게」 모음 (11-22 셋째 — 옛 빈 칸 뒤 140칸)
-		if (q.position == ALLROUND)
-			add(in, OFF_ALLROUND + rel * NT + tile);
-		// OFF_LASTPASS 앞 140 = 월 2차례 · 뒤 140 = 공격 태세(11-22) · OFF_FWDMOVED = 족보 토큰(족보 끔 — 늘 0)
+			add(in, OFF_HOLDUP + rel * NF, f);
+		if (q.charge && rel == 0)   // 「강하게」는 두는 팀 차례 안에서만 — 상대 칸은 늘 0 이라 없다
+			add(in, OFF_CHARGE, f);
 	}
-	if (s.phase == PLAY && s.turn_team >= 0) {   // 두는 팀: 이번 차례에 행동한 선수 칸 (11-22 한 선수 행동 하나 — 옛 「사람이 지나간 칸」 자리) · OFF_VIS_B(옛 공 지나간 칸)는 11-22 부터 늘 0
+	if (s.phase == PLAY && s.turn_team >= 0)   // 두는 팀: 이번 차례에 행동한 선수 칸
 		for (const Player &q : s.players)
-			if (q.placed() && q.team == s.turn_team && q.acted) {
-				const int me = q.uid - s.turn_team * PER_TEAM;
-				if (me >= 0 && me < TEAM_N)
-					add(in, OFF_VIS_P + me * NT + flip_tile(q.pos, team));
-			}
-	}
-	for (int r = 0; r < 2; r++) {   // 태세 존 칸 (11-21 방향 존) — 팀마다 겹친 칸은 한 번
+			if (q.placed() && q.team == s.turn_team && q.acted)
+				add(in, OFF_ACTED + (q.uid - s.turn_team * PER_TEAM) * NF, ftile(q.pos, team));
+	for (int r = 0; r < 2; r++) {   // 태세 존 칸 — 팀마다 겹친 칸은 한 번
 		bool on[NT] = {};
 		for (const Player &q : s.players) {
 			if ((q.team == team ? 0 : 1) != r)
@@ -82,118 +84,89 @@ void net_input(const State &s, int team, NetInput &in) {
 			for (int k = 0; k < nz; k++) {
 				const int t = flip_tile(z[k], team);
 				if (!on[t])
-					on[t] = true, add(in, OFF_ZONE + r * NT + t);
+					on[t] = true, add(in, OFF_ZONE + r * NF, g_tiles.field[t]);
 			}
 		}
 	}
 	if (s.loose_ball())
-		add(in, OFF_LOOSE + (s.loose_team == team ? 0 : 1) * NT + flip_tile(s.ball_pos, team));
+		add(in, OFF_LOOSE + (s.loose_team == team ? 0 : 1) * NF, ftile(s.ball_pos, team));
 	if (s.phase == PLACEMENT && !s.redeploy)
 		for (int r = 0; r < 2; r++)
 			for (int k = 0; k < CARD_POOL_N; k++)
 				if (!drafted[r][k])
-					add(in, OFF_BENCH + r * POOL_N + k);
-	for (int r = 0; r < 2; r++)   // 켜진 족보 (지금은 두 팀 같은 표)
-		for (int k = 0; k < N_JK; k++)
-			if (jk_enabled(s, r == 0 ? team : opp, k))
-				add(in, OFF_JKON + r * N_JK + k);
-	// OFF_BOARD 칸(옛 전술판, 11-21 없앰)은 늘 0 — 지금 망을 이어 배우려고 자리만 둔다
+					add(in, OFF_BENCH + r * POOL_N, k);
 	float *d = in.dense;
-	for (int k = 0; k < DENSE; k++)
-		d[k] = 0.0f;
 	d[0] = s.phase == PLACEMENT;
 	d[1] = s.phase == PLAY;
 	d[2] = float(eff_hold(s)) / 5.0f;
-	d[3] = float(std::max(0, std::min(s.half_turn(), g_half_turns))) / float(g_half_turns);
+	d[3] = g_time_input ? float(std::max(0, std::min(s.half_turn(), g_half_turns))) / float(g_half_turns) : 0.0f;
 	d[4] = float(s.goals[team]) / 2.0f;
 	d[5] = float(s.goals[opp]) / 2.0f;
-	// d[6] = 옛 골 데미지 차 (늘 0)
-	d[17] = float(s.ghp[team]) / 5.0f;   // 골키퍼 남은 체력 — 우리 · 상대 (옛 골문 체력 칸)
-	d[18] = float(s.ghp[opp]) / 5.0f;
-	d[19] = float(s.gk_kick[team]) / 5.0f;   // 골키퍼 킥 힘 · 킥 범위 — 우리 · 상대 (11-24 · 옛 역습 보너스·괄호 합 칸)
-	d[20] = float(s.gk_kick[opp]) / 5.0f;
-	d[21] = float(s.gk_range[team]) / 6.0f;
-	d[22] = float(s.gk_range[opp]) / 6.0f;
-	d[7] = s.turn_team == team;
-	d[8] = float(s.pts) / float(POINTS_PER_TURN);
-	d[9] = kickoff_turn(s);
-	d[10] = float(s.placement_index) / float(2 * s.team_n);
-	d[11] = float(assist_value(s, team)) / 4.0f;
-	d[12] = s.opener == team;
-	d[13] = s.half == 2;
-	if (!g_time_input)
-		d[3] = d[13] = 0.0f;
-	d[14] = s.role[team] == R_ATK;
-	d[15] = s.phase == PLAY && s.ball_team() == team;
-	d[16] = float(std::max(-3.0, std::min(3.0, heuristic(s, team))) / 3.0);
-	// d[25]·d[53] = 옛 역습 행동 수 · d[44]~d[49]·d[54]·d[55] = 옛 족보 진행·혜택 (11-21 없앰 — 늘 0, 이식 때 치우침으로 접음)
-	d[23] = s.keeper == team;   // 키퍼가 공을 쥔 팀 — 우리 · 상대 (11-23 키퍼 롱킥 — 옛 키퍼 킥 팀 칸)
-	d[24] = s.keeper == opp;
-	for (int k = 0; k < N_JK; k++) {   // 이번 차례(남의 차례면 다음 차례 몫)에 이미 걸린 족보 — 같은 족보는 한 차례 한 번 (11-21)
-		d[26 + k] = float((jokbo_mask(s, team) >> k) & 1);
-		d[35 + k] = float((jokbo_mask(s, opp) >> k) & 1);
-	}
-	d[50] = float(s.team_n) / float(PER_TEAM);
-	d[51] = float(s.sk_passive);
+	d[6] = float(s.pts) / float(POINTS_PER_TURN);
+	d[7] = kickoff_turn(s);
+	d[8] = float(s.placement_index) / float(2 * s.team_n);
+	d[9] = float(assist_value(s, team)) / 4.0f;
+	d[10] = s.opener == team;
+	d[11] = s.role[team] == R_ATK;
+	d[12] = s.phase == PLAY && s.ball_team() == team;
+	d[13] = float(std::max(-3.0, std::min(3.0, heuristic(s, team))) / 3.0);
+	d[14] = float(s.ghp[team]) / 5.0f;   // 골키퍼 남은 체력 — 우리 · 상대
+	d[15] = float(s.ghp[opp]) / 5.0f;
+	d[16] = float(s.gk_range[team]) / 6.0f;   // 골키퍼 킥 범위 — 우리 · 상대 (킥 힘은 늘 4 라 입력 없음)
+	d[17] = float(s.gk_range[opp]) / 6.0f;
+	d[18] = s.keeper == team;   // 키퍼가 공을 쥔 팀 — 우리 · 상대
+	d[19] = s.keeper == opp;
 }
 
 int action_index(const State &s, const Action &a) {
+	if (a.sk)
+		return -1;   // 스킬 수는 11-19 부터 없다
 	const int team = s.turn_team;
-	int i = -1;
+	const int me = a.uid - PER_TEAM * team;   // 두는 팀 안 번호 (배치는 uid = 드래프트 슬롯)
+	const bool mine = me >= 0 && me < PER_TEAM;
 	switch (a.t) {
 		case A_MOVE:
 		case A_DRIBBLE:
 		case A_PASS: {
+			const int f = ftile(a.dest, team);
+			if (!mine || f < 0)
+				return -1;
 			const int kind = a.t == A_MOVE ? 0 : a.t == A_DRIBBLE ? 1 : 2;
-			const int me = a.uid - PER_TEAM * team;
-			if (me < 0 || me >= PER_TEAM || !in_bounds(a.dest))
-				return -1;
-			i = OFF_TILE + (kind * PER_TEAM + me) * NT + flip_tile(a.dest, team);
-			break;
-		}
-		case A_RUN: {   // 뒷공간 패스 (11-21): (차는 · 받는) × 칸
-			const int me = a.uid - PER_TEAM * team, mm = a.mate - PER_TEAM * team;
-			if (me < 0 || me >= PER_TEAM || mm < 0 || mm >= PER_TEAM || !in_bounds(a.dest))
-				return -1;
-			i = OFF_RUN + (me * PER_TEAM + mm) * NT + flip_tile(a.dest, team);
-			break;
+			return OFF_TILE + (kind * PER_TEAM + me) * NF + f;
 		}
 		case A_SHOT:
-		case A_STANCE: {
-			const int me = a.uid - PER_TEAM * team;
-			if (me < 0 || me >= PER_TEAM)
+			return mine ? OFF_SHOT + me : -1;
+		case A_STANCE: {   // 월(제자리 사방) = 제자리 칸 · 그 밖 = 방향 태세 칸 (공 임자 「강하게」 제자리 수는 stance_dir 이 −1 이라 번호 없음 — 판 4 때부터 그대로)
+			if (!mine)
 				return -1;
-			i = (a.t == A_SHOT ? OFF_SHOT : OFF_STANCE_A) + me;
-			if (a.t == A_STANCE) {   // 월(제자리 사방) = 옛 태세 칸 · 그 밖 = 방향 태세 칸 (11-23 규칙 · 비교용 CF_ZONE4=1 이면 모두 제자리)
-				int dir = stance_dir(s.players[a.uid], a.dest);
-				if (dir < 0)
-					return -1;
-				if (dir != ZD_ALL) {
-					if (team == AWAY && dir < 2)
-						dir ^= 1;   // 원정은 x 를 뒤집어 본다 (flip_tile 과 같게)
-					i = OFF_STANCE_DIR + me * 4 + dir;
-				}
-			}
-			break;
+			int dir = stance_dir(s.players[a.uid], a.dest);
+			if (dir < 0)
+				return -1;
+			if (dir == ZD_ALL)
+				return OFF_STANCE_A + me;
+			if (team == AWAY && dir < 2)
+				dir ^= 1;   // 원정은 x 를 뒤집어 본다 (flip_tile 과 같게)
+			return OFF_STANCE_DIR + me * 4 + dir;
 		}
-		case A_PLACE:
+		case A_PLACE: {
 			if (a.uid < 0 || a.uid > POOL_N || !in_bounds(a.dest))
 				return -1;
-			return OFF_PLACE + a.uid * NT + flip_tile(a.dest, team);
-		case A_KEEP: {   // 키퍼 롱킥 (11-23): 받는 아군 × 그 칸
-			const int me = a.uid < 0 ? PER_TEAM - 1 : a.uid - PER_TEAM * team;   // 빈 칸 롱킥(루즈볼, 11-24) = 안 쓰던 다섯째 자리
-			if (me < 0 || me >= PER_TEAM || !in_bounds(a.dest))
-				return -1;
-			return OFF_SAVE_RUN + me * NT + flip_tile(a.dest, team);
+			const int p = g_tiles.place[flip_tile(a.dest, team)];
+			return p < 0 ? -1 : OFF_PLACE + a.uid * NPL + p;
 		}
-		case A_SAVE:   // 공 없는 선수 「강하게」 모으기 — 옛 키퍼 킥 칸 OFF_SAVE + 자기 칸
-			if (!in_bounds(a.dest))
+		case A_KEEP: {   // 키퍼 롱킥: 받는 아군(me) 발밑 · uid −1 = 빈 칸 루즈볼 (11-24)
+			const int k = a.uid < 0 ? PER_TEAM : me, f = ftile(a.dest, team);
+			if ((a.uid >= 0 && !mine) || f < 0)
 				return -1;
-			return OFF_SAVE + flip_tile(a.dest, team);
+			return OFF_KEEP + k * NF + f;
+		}
+		case A_SAVE: {   // 공 없는 선수 「강하게」 모으기 — 자기 칸
+			const int f = ftile(a.dest, team);
+			return f < 0 ? -1 : OFF_SAVE + f;
+		}
 		default:
 			return -1;
 	}
-	return a.sk ? -1 : i;   // 스킬 수는 11-19 부터 없다 (옛 스킬 칸은 뒷공간 패스가 씀)
 }
 
 struct Eval {
@@ -400,10 +373,10 @@ float style_bias(const State &s, const Action &a, const Style &st) {
 	auto cheb = [](V2 x, V2 y) { return manhattan(x, y); };   // 거리 = 게임과 같은 맨해튼 (11-21 — 옛 체비쇼프는 대각 2칸 패스를 「짧은 패스」로 셌다)
 	const int gain = (a.dest.x - p.pos.x) * fwd;   // 앞으로 간 칸
 	float b = 0.0f;
-	if (st.jk != 0.0f && s.ball_team() == team && (a.t == A_PASS || a.t == A_RUN) && gain >= JK_AHEAD)
+	if (st.jk != 0.0f && s.ball_team() == team && a.t == A_PASS && gain >= JK_AHEAD)
 		b += st.jk * 1.0f;   // 족보 의지 (11-21 족보 6개): 전진 패스가 되는 킥에 덤
 	if (s.ball_team() == team) {   // 공격
-		if (a.t == A_PASS || a.t == A_RUN) {
+		if (a.t == A_PASS) {
 			const int d = cheb(p.pos, a.dest);
 			b += st.poss * (d <= 2 ? 1.0f : 0.0f);                             // 지공: 짧은 패스 (긴 킥을 깎으면 슛 길이 막혀 약해짐 — 측정 11-12)
 			b += st.ctr * (d >= 3 ? 1.0f : -0.5f) + st.ctr * 0.25f * float(std::max(0, gain));   // 역습: 긴 킥·앞으로
@@ -901,7 +874,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, PASSER, RECEIVER };   // 11-24 리시버
 	int pos[PER_TEAM], bonus[PER_TEAM][4] = {}, rng_up[PER_TEAM] = {}, krng_up[PER_TEAM] = {}, hold_up[PER_TEAM] = {};
 	int used = 0;
-	const int prospects = int(next() % (PER_TEAM + 1));   // 유망주 0~5명
+	const int prospects = int(next() % (PER_TEAM + 1));   // 유망주 0~4명 (11-24 옛 다섯째 자리 없앰 — 옛 0~5 의 4·5 는 둘 다 「모두 유망주」였다)
 	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 스탯 합 0 ~ 3 × level
 	const int mono = next() % 5 == 0 ? POOL[next() % JOBS_N] : 0;   // 20 % 는 한 직업 팀
 	// 몰아 키운 에이스 (11-23 사용자 「몰아 키운 에이스도 자가학습에 넣어」): 30 % 팀은 전직 선수 한 명이 카드 8~13장 (커리어 한 해 ≈ 26장 · 한 선수 다 키우기 ≈ 13장)

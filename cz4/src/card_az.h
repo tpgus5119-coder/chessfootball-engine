@@ -10,33 +10,27 @@ namespace cf {
 namespace card {
 namespace az {
 
-// ---------- 입력 (평가하는 팀이 늘 +x로 공격하게 뒤집는다) — 판 4 (11-19 카드 없는 4대4 · 옛 망은 못 읽는다) ----------
-constexpr int NPOS = POOL_N + 1;                       // 직업 10 + 신입생·만능 칸
-constexpr int N_TB = 12;                               // 옛 전술판 효과 수 — 망 입력 자리만 (11-21 없앰, 칸은 늘 0)
-constexpr int OFF_PIECE = 0;                           // (rel·NPOS + slot)·70 + 칸
-constexpr int OFF_STANCE = OFF_PIECE + 2 * NPOS * NT;  // (rel·4 + 힘 1~4+)·70 + 칸
-constexpr int OFF_BALL = OFF_STANCE + 2 * 4 * NT;
-constexpr int OFF_LOOSE = OFF_BALL + 2 * NT;
-constexpr int OFF_UNPLACED = OFF_LOOSE + 2 * NT;
-constexpr int OFF_BENCH = OFF_UNPLACED + 2 * NPOS;
-constexpr int OFF_MARKED = OFF_BENCH + 2 * POOL_N;
-constexpr int OFF_BOOSTED = OFF_MARKED + 2 * NT;   // 11-20 부스터 없앰 — 빈 칸 (자리만 지킴)
-constexpr int OFF_PSTAT = OFF_BOOSTED + 2 * NT;        // 스탯업 (rel·4 + 스탯)·3단계(1·2·3+)·70 + 칸
-constexpr int OFF_JKON = OFF_PSTAT + 2 * 4 * 3 * NT;   // 그 팀에 켜진 족보: rel·N_JK + 족보 (card.h jk_enabled). 이 칸 묶음 2·3·70 중 앞 12칸만 쓰고 나머지 예비 (11-21 족보 6개 — 옛 9개 18칸은 이식 때 치우침으로 접음)
-constexpr int OFF_PERK = OFF_JKON + 2 * 3 * NT;        // 범위 +1 혜택 (rel·2 + 이동·킥)·70 + 칸
-constexpr int OFF_ALLROUND = OFF_PERK + 2 * 2 * NT;    // 놓인 만능: rel·70 + 칸 · 안 놓인 만능: 2·70 + rel
-constexpr int OFF_BOARD = OFF_ALLROUND + 2 * NT + 2;   // 옛 전술판 자리 (늘 0 — 망 형식 유지)
-constexpr int OFF_LASTPASS = OFF_BOARD + 2 * N_TB;     // 앞 140칸 = 태세가 한 차례 더 남은 선수 칸(월 2차례, 11-21) rel·70 + 칸 · 뒤 140칸 늘 0
-constexpr int OFF_FWDMOVED = OFF_LASTPASS + 2 * 2 * NT; // 족보 +1 토큰 선수 칸 (11-21): rel·70 + 칸
-constexpr int OFF_ZONE = OFF_FWDMOVED + 2 * NT;        // 태세 존 칸 (11-21 방향 존 — 옛 예비 칸 앞 140칸): rel·70 + 존 칸 (월은 사방 4칸)
-constexpr int OFF_VIS_P = OFF_ZONE + 2 * NT;           // 이번 차례 사람이 있었던 칸 (11-21 되돌아가기 금지 — 예비 칸): 두는 팀의 me(0~3)·70 + 칸
-constexpr int OFF_VIS_B = OFF_VIS_P + TEAM_N * NT;     // 이번 차례 공이 있었던 칸: 70 + 칸
-constexpr int SPARSE_USED = OFF_VIS_B + NT;
-constexpr int SPARSE_RESERVE = 22;   // 예비 (11-23 판 10×8 — 칸 수 80 으로 다시 셈 · 옛 식 512 − 존 − 지나간 칸은 70칸 판 기준)   // 옛:   // 나중에 더할 칸 (11-19 512 칸 — 11-21 존 140 · 지나간 칸 350 을 여기서 씀, 22칸 남음)
-constexpr int SPARSE = SPARSE_USED + SPARSE_RESERVE;
-static_assert(NT == 88 && SPARSE == 7746 && OFF_JKON == 5498 && OFF_LASTPASS == 6580 && OFF_VIS_P == 7284 && SPARSE_RESERVE == 22, "입력 칸 수 (판 11×8, 11-23) — tools/az/train.py CF_MODE=card · tools/cz/net_board8.py 와 같게");
-constexpr int DENSE_USED = 56;
-constexpr int DENSE = 96;   // 뒤 40칸 = 예비
+// ---------- 입력 (평가하는 팀이 늘 +x로 공격하게 뒤집는다) — 판 5 (11-24 다섯째 자리·늘 꺼진 칸 없앰 · 옛 판 4 망은 tools/cz/net_slim.py 로 옮긴다) ----------
+// 칸 번호: 선수·공·존이 놓이는 입력과 수는 박스(골대 포함) 밖 NF = 72칸만 쓴다 (field_tile) · 배치는 자기 진영 박스 밖 NPL = 32칸 (place_tile)
+constexpr int NPOS = POOL_N + 1;                       // 직업 10 + 신입생 칸
+constexpr int NF = NT - 2 * 2 * (GOAL_N + 2);           // 72 — 박스 2×4 둘 밖
+constexpr int NPL = (W / 2) * H - 2 * (GOAL_N + 2);     // 32 — 자기 진영(x 0~4) 박스 밖
+constexpr int OFF_PIECE = 0;                           // (rel·NPOS + slot)·NF + 칸
+constexpr int OFF_STANCE = OFF_PIECE + 2 * NPOS * NF;  // (rel·3 + 힘 2·3·4+)·NF + 칸 (태세 힘은 디펜스 3 − 마커 1 = 2 아래로 안 내려간다)
+constexpr int OFF_BALL = OFF_STANCE + 2 * 3 * NF;      // 공 임자: rel·NF + 칸
+constexpr int OFF_LOOSE = OFF_BALL + 2 * NF;           // 루즈볼: (찬 팀 rel)·NF + 칸
+constexpr int OFF_UNPLACED = OFF_LOOSE + 2 * NF;       // 안 놓인 선수: rel·NPOS + slot
+constexpr int OFF_BENCH = OFF_UNPLACED + 2 * NPOS;     // 드래프트에 남은 직업: rel·POOL_N + slot
+constexpr int OFF_MARKED = OFF_BENCH + 2 * POOL_N;     // 마커에게 붙은 선수
+constexpr int OFF_HOLDUP = OFF_MARKED + 2 * NF;        // 지속·버티기 성장(hold_up) 선수
+constexpr int OFF_PSTAT = OFF_HOLDUP + 2 * NF;         // 스탯업: (rel·4 + 스탯)·NF + 칸 (스탯마다 +1 한 번 — 11-23)
+constexpr int OFF_PERK = OFF_PSTAT + 2 * 4 * NF;       // 범위 +1: (rel·2 + 이동·킥)·NF + 칸
+constexpr int OFF_CHARGE = OFF_PERK + 2 * 2 * NF;      // 「강하게」 모은 선수 (두는 팀만 — 모으기는 그 차례 안에서만)
+constexpr int OFF_ZONE = OFF_CHARGE + NF;              // 태세 존 칸: rel·NF + 칸
+constexpr int OFF_ACTED = OFF_ZONE + 2 * NF;           // 이번 차례에 행동한 두는 팀 선수: me·NF + 칸
+constexpr int SPARSE = OFF_ACTED + PER_TEAM * NF;
+static_assert(NF == 72 && NPL == 32 && SPARSE == 4002, "입력 칸 수 (판 5, 11-24) — tools/az/train.py CF_MODE=card · tools/cz/net_slim.py 와 같게");
+constexpr int DENSE = 20;   // 숫자 입력 (card_az.cpp net_input 의 d[0]~d[19])
 constexpr int MAX_ACTIVE = 96;
 
 struct NetInput {
@@ -46,26 +40,20 @@ struct NetInput {
 };
 void net_input(const State &s, int team, NetInput &in);
 
-// ---------- 수 번호 (판 4) ----------
-// 이동·드리블·패스 (3 × 내 5 × 칸 70) · 슛 5 · 태세 5(11-21부터 월 = 제자리 사방만) · 배치 11×70 · (빈 1 — 옛 턴 종료) · 키퍼 킥 70
-// · 뒷공간 패스(11-21 — 옛 스킬 수 칸: 11-19 부터 한 번도 안 쓴 자리) · 빈 칸 키퍼 킥 + 받을 동료(11-21 — 같은 옛 스킬 칸)
-// · 방향 태세 5 × 4 (11-21 — 옛 예비 칸 첫 20칸). 앞 번호는 그대로라 지금 망을 이어 배운다
-constexpr int OFF_TILE = 0;
-constexpr int OFF_SHOT = OFF_TILE + 3 * PER_TEAM * NT;
-constexpr int OFF_STANCE_A = OFF_SHOT + PER_TEAM;
-constexpr int OFF_PLACE = OFF_STANCE_A + PER_TEAM;
-constexpr int OFF_FREE_END = OFF_PLACE + (POOL_N + 1) * NT;   // 옛 턴 종료 — 11-21 없앰, 빈 칸
-constexpr int OFF_SAVE = OFF_FREE_END + 1;
-constexpr int OFF_RUN = OFF_SAVE + NT;                 // 뒷공간 패스: (차는 내 5 × 받는 내 5)·70 + 칸 (옛 스킬 수 칸 1901~)
-constexpr int OFF_SAVE_RUN = OFF_RUN + PER_TEAM * PER_TEAM * NT;   // 키퍼 롱킥 (A_KEEP, 11-23): 받는 내 5·80 + 그 선수 칸 (옛 빈 칸 키퍼 킥 자리)
-constexpr int OFF_STANCE_DIR = OFF_SAVE + NT + OFF_PLACE + OFF_STANCE_A;   // (내 5 × 4 + 방향) — 방향은 평가 팀 기준(원정은 ±x 를 바꾼다) DIRS 순서 +x·−x·+y·−y
-constexpr int NA_USED = OFF_STANCE_DIR + PER_TEAM * 4;
-constexpr int NA = 5120;   // 뒤는 예비 (11-23 판 10×8 — 옛 4096)
-static_assert(OFF_RUN == 2387 && OFF_SAVE_RUN == 4587 && OFF_SAVE_RUN + PER_TEAM * NT <= OFF_STANCE_DIR && OFF_STANCE_DIR == 5042 && NA_USED == 5062 && NA >= NA_USED, "수 칸 수 (판 11×8, 11-23) — tools/az/train.py CF_MODE=card 와 같게");
+// ---------- 수 번호 (판 5) ----------
+constexpr int OFF_TILE = 0;                                   // 이동·드리블·패스: (종류·PER_TEAM + me)·NF + 칸
+constexpr int OFF_SHOT = OFF_TILE + 3 * PER_TEAM * NF;        // 슛: me
+constexpr int OFF_STANCE_A = OFF_SHOT + PER_TEAM;             // 제자리 태세(월 사방): me
+constexpr int OFF_PLACE = OFF_STANCE_A + PER_TEAM;            // 배치: slot·NPL + 자기 진영 칸
+constexpr int OFF_SAVE = OFF_PLACE + (POOL_N + 1) * NPL;      // 공 없는 선수 「강하게」 모으기: 자기 칸
+constexpr int OFF_KEEP = OFF_SAVE + NF;                       // 키퍼 롱킥: (받는 me 0~3 · 4 = 빈 칸 루즈볼)·NF + 칸
+constexpr int OFF_STANCE_DIR = OFF_KEEP + (PER_TEAM + 1) * NF;   // 방향 태세: me·4 + 방향 (평가 팀 기준 — 원정은 ±x 를 바꾼다) DIRS 순서 +x·−x·+y·−y
+constexpr int NA = OFF_STANCE_DIR + PER_TEAM * 4;
+static_assert(NA == 1672, "수 칸 수 (판 5, 11-24) — tools/az/train.py CF_MODE=card · tools/cz/net_slim.py 와 같게");
 int action_index(const State &s, const Action &a);
 
 // ---------- 망 (본편과 같은 몸통, 머리표 MAGIC만 다르다) ----------
-constexpr int MAGIC = 0x345A4643;   // "CFZ4" — 판 4 (11-19 카드 없음). 옛 "CFZC" 망은 안 읽힌다
+constexpr int MAGIC = 0x345A4643;   // "CFZ4" — 감독 모드 망 (머리표의 SPARSE·DENSE·NA 가 위와 같아야 읽힌다 — 옛 판 4 망 7746·96·5120 은 안 읽힌다)
 struct Net {
 	int h1 = 0, h2 = 0;
 	int na = 0;
@@ -146,9 +134,9 @@ struct Rec {
 	float z, q, aux;
 	uint32_t game;
 };
-static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 784, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
+static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 480, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
 
-// 컵 경기처럼 정해진 선수단 — 유망주 0~5명 · 나머지 서로 다른 직업 · 선수 스탯 0~3 (학습에 섞는다)
+// 컵 경기처럼 정해진 선수단 — 유망주 0~4명 · 나머지 서로 다른 직업 · 선수 스탯 0~3 (학습에 섞는다)
 void random_lineup(State &s, int team, unsigned long long r);
 
 // 길 고르기용 상태 가치 — card::value_path 의 PathValue (ctx = const Net *, 망이 안 읽혔으면 휴리스틱 값). team 에 좋을수록 큼

@@ -366,7 +366,7 @@ static int unplaced_with(const State &s, int team, int position) {
 }
 
 static int slot_pos(int slot) { return slot == SLOT_PROSPECT ? PROSPECT : DRAFT_POOL[slot]; }
-// 유망주 칸 = 드래프트 풀 밖 선수(유망주 · 만능 11-17) — 만능은 망 입력·배치 수에서 유망주 칸을 같이 쓴다 (만능 표시는 card_az OFF_ALLROUND)
+// 유망주 칸 = 드래프트 풀 밖 선수(유망주 · 만능 11-17) — 만능은 망 입력·배치 수에서 유망주 칸을 같이 쓴다 (만능은 11-17 부터 판에 안 나온다)
 static int unplaced_extra(const State &s, int team) {
 	const int u = unplaced_with(s, team, PROSPECT);
 	return u >= 0 ? u : unplaced_with(s, team, ALLROUND);
@@ -1172,9 +1172,11 @@ static void pass_targets(const State &s, const Player &p, int rng, Reach &ground
 // ---------- 스루패스 (11-22 밤 사용자 「주우러 가는 것도 포인트 · 포인트 1개 남았으면 적 이동 범위 밖 칸만」) ----------
 // 스루패스 = 앞쪽 **빈 칸**으로 차는 패스(1포인트) — 누구나 (11-23 사용자 「스루패스 모두 가능」). 공은 그 칸에 루즈볼로 남고,
 // 동료가 이동으로 주워야 내 공이 된다(그것도 포인트 1 · 그 동료의 행동). 칸 조건: 앞쪽 빈 칸 · 박스·골대 아님 · 동료(차는 선수 말고) 하나가 뛰어 닿음 ·
-// **차는 수가 이번 차례 마지막 포인트면 적 누구의 이동 범위에도 들지 않는 칸** (상대가 먼저 줍지 못하게 — 줍는 건 다음 우리 차례)
-// 루즈볼 칸 조건 (스루패스·키퍼 롱킥 같음): 빈 칸 · 박스·골대 아님 · 찬 선수 말고 동료 하나가 뛰어 닿음 · 마지막 포인트면 적 이동 범위 밖
+// **포인트가 2개 남았을 때만** (11-24 사용자 「포인트 1개 남았을 때는 루즈볼 금지」 — 차기 1 + 달려가 받기 1. 옛 「마지막 포인트면 적 이동 범위 밖 칸」 없앰)
+// 루즈볼 칸 조건 (스루패스·키퍼 롱킥 같음): 포인트 2 · 빈 칸 · 박스·골대 아님 · 찬 선수 말고 동료 하나가 뛰어 닿음
 static bool loose_ok(const State &s, int team, int kicker, V2 t) {
+	if (s.pts <= 1)
+		return false;   // 루즈볼 = 차기 1 + 동료가 달려가 받기 1 = 포인트 2짜리 — 포인트 1개 남았으면 없음 (11-24 사용자 · 옛 「마지막 포인트면 적 이동 범위 밖」 없앰)
 	if (!in_bounds(t) || player_at(s, t) || is_any_box(t) || is_goal(t))
 		return false;
 	bool mate = false;
@@ -1187,13 +1189,7 @@ static bool loose_ok(const State &s, int team, int kicker, V2 t) {
 				break;
 			}
 		}
-	if (!mate)
-		return false;
-	if (s.pts <= 1)
-		for (const Player &q : s.players)
-			if (q.team != team && q.placed() && manhattan(q.pos, t) <= act_range(s, q, C_MOVE))
-				return false;   // 마지막 포인트 = 적 이동 범위 밖만
-	return true;
+	return mate;
 }
 
 static bool through_ok(const State &s, const Player &p, V2 t) {

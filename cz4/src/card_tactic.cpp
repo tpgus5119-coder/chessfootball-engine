@@ -176,9 +176,9 @@ float holder(const State &s, const Sit &x, const float *S, int tac, const Player
 		b -= 0.4f * std::fabs(float(d) - (1.0f + len * 0.4f));                     // 4 길이 (1칸 ~ 5칸)
 	};
 	switch (a.t) {
-	case A_PASS: case A_RUN: {   // 뒷공간 패스 = 앞으로 긴 패스의 하나 (따로 막대 없음)
+	case A_PASS: {
 		const int d = manhattan(p.pos, a.dest);
-		const int r = a.t == A_RUN ? a.mate : player_at(s, a.dest);
+		const int r = player_at(s, a.dest);
 		b += (S[PASS] - 5) * 0.5f;
 		common(d);
 		if (r >= 0) {

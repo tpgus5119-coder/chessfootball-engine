@@ -8,7 +8,7 @@
 // 킥 힘 = min(킥 수치, 6 − 거리) (하한 1) · 킥 범위 4 · 이동 범위 = 이동 수치(기준 3) · 수비 태세 힘 = 수비 수치.
 // 슛 = 슛 길의 경합(땅볼 존)을 뚫고 골대 칸에 닿으면 골 (11-21 골문 체력·슛 데미지 없앰).
 // 11-21 사용자 공통 규칙: 차례 종료 수 없음(포인트를 다 쓴다) · 한 차례 안 되돌아가기 금지(사람·공) ·
-// 빈 칸 패스 = 수비 뒷공간 + 받을 동료가 같이 뛰어감(A_RUN) · 축구 족보 6개 — 걸린 순간 행동 포인트 +1, 한 차례 한 번.
+// 축구 족보 6개 — 걸린 순간 행동 포인트 +1, 한 차례 한 번 (11-21 부터 모두 꺼 둠).
 #include "engine.h"
 
 #include <cstdint>
@@ -25,7 +25,6 @@ extern int g_half_turns;   // 반 길이(두 팀 합 차례) — 자가학습만
 enum CardType { C_KICK = 0, C_MOVE = 1, C_DEF = 2, C_SHOT = 3 };   // 행동 셋 (킥·이동·수비) · C_SHOT = 슛 범위 묻기 전용 (11-22 — 킥 범위 C_KICK 은 패스)
 enum Role { R_ATK = 0, R_DEF = 1 };   // 공 가진 팀 = 공격
 constexpr int CARD_POOL_N = 10;
-constexpr int TEAM_N = 4;   // 4대4 (11-19) — 팀마다 uid 0~3 · 5~8 만 판에 선다 (PER_TEAM 5 는 배열 자리)
 
 // 선수 기준 수치 (11-19 사용자 · 11-21 이동 3): 킥 3 · 수비 3 · 이동 3 — 여기에 스탯업(bonus)·직업·족보 보정을 더한다
 constexpr int BASE_KICK = 4, BASE_DEF = 3, BASE_MOVE = 3;
@@ -42,8 +41,8 @@ extern int g_zone4;   // 0 = 곁 한 칸 방향 존 · 월만 사방 (규칙, 11
 constexpr int JK_NEAR = 2;   // 지원·삼각 패스의 「2칸 안」(맨해튼)
 constexpr int JK_AHEAD = 3;  // 전진 패스·돌파의 「3칸 이상 앞」
 
-// A_SAVE = 공 없는 선수 「강하게」(11-22 — 옛 키퍼 킥 번호 자리, dest = 자기 칸) · A_RUN = 뒷공간 패스(빈 칸 + 받을 동료 mate 가 같이 뛰어감, 11-21) · 6·7 = 빈 번호(옛 차례 끝·전술)
-enum Act { A_MOVE = 0, A_DRIBBLE, A_PASS, A_SHOT, A_STANCE, A_PLACE, A_KEEP, A_FREE7, A_SAVE, A_RUN };   // A_KEEP(6) = 키퍼 롱킥 — uid = 받는 아군 · dest = 그 칸 (11-23 · 옛 빈 번호)
+// A_SAVE = 공 없는 선수 「강하게」(11-22 — 옛 키퍼 킥 번호 자리, dest = 자기 칸) · 7 = 빈 번호(옛 차례 끝·전술) · 9 = 옛 뒷공간 패스 A_RUN (11-22 부터 스루패스가 대신 — 11-24 없앰)
+enum Act { A_MOVE = 0, A_DRIBBLE, A_PASS, A_SHOT, A_STANCE, A_PLACE, A_KEEP, A_FREE7, A_SAVE };   // A_KEEP(6) = 키퍼 롱킥 — uid = 받는 아군 · dest = 그 칸 (11-23 · 옛 빈 번호)
 
 struct Player {
 	V2 pos = UNPLACED;
@@ -101,7 +100,7 @@ struct State {
 	unsigned char rep[PLAYERS][CARD_POOL_N] = {};   // 대표 행동 수 (기록 — 전직은 보상으로만)
 	int tturn[2] = { 0, 0 };
 	int st_turn[PLAYERS] = {};
-	int team_n = TEAM_N;     // 팀당 출전 인원
+	int team_n = PER_TEAM;   // 팀당 출전 인원
 	int sk_passive = 1;      // 직업 능력 상시 (11-19 — 모든 경기). 0 = 측정용으로만
 
 	int ball_team() const;
@@ -119,7 +118,6 @@ struct Action {
 	V2 dest{ 0, 0 };
 	int card = -1;     // 쓰지 않음 (옛 카드 번호 자리 — 늘 −1)
 	int sk = 0;        // 늘 0 (11-19 직업 능력 상시 — 옛 「스킬을 켠 수」 자리)
-	int mate = -1;     // 뒷공간 패스(A_RUN)의 받을 동료 uid (11-21) — 그 밖 −1
 };
 
 // 수비 태세 존 (11-21 사용자 「곁 한 칸을 골라 존 1칸 · 방향 공개 · 월 = 사방 4칸 1차례」)
