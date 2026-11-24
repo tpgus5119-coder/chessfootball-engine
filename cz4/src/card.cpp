@@ -1682,6 +1682,14 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 			for (int k = 1; k <= (q.position == ALLROUND ? 2 : 1); k++)
 				gen(q, k);
 	}
+	if (s.loose_ball() && s.loose_team == team) {   // 스루패스 = 저절로 달려가 받기 (11-24 사용자) — 루즈볼 칸으로 뛰어 닿는 동료의 이동만 (여럿이면 고르기 · 포인트가 없으면 다음 우리 차례 처음). 아무도 못 닿으면 보통 수
+		std::vector<Action> run;
+		for (const Action &a : out)
+			if (a.t == A_MOVE && a.dest == s.ball_pos)
+				run.push_back(a);
+		if (!run.empty())
+			out.swap(run);
+	}
 }
 
 // ---------- 손평가 (망 없는 화면 AI · 첫 세대 가치) ----------
