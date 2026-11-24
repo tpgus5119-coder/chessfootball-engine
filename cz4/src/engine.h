@@ -29,7 +29,7 @@ constexpr V2 DIRS[4] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }; // board.gd
 enum Team { HOME = 0, AWAY = 1 };
 enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2 };
 // 크리에이터(9)는 v5.30에 풀에서 빠졌다 — 번호는 구멍으로 남긴다 (기보·저장 호환). 퀵슈터 11 · 런처 12
-enum Pos { PROSPECT = 0, CANNON = 1, RECEIVER = 2, TRICKSTER = 3, TITAN = 4, MARKER = 5,
+enum Pos { PROSPECT = 0, CANNON = 1, TARGETMAN = 2, TRICKSTER = 3, TITAN = 4, MARKER = 5,
 	HUNTER = 6, BOOSTER = 7, WALL = 8, SPRINTER = 10, MAESTRO = 12, NOMAD = 13,
 	ALLROUND = 14 };
 constexpr int LONGSHOT = BOOSTER;   // 중거리 슈터 (11-22 — 옛 부스터 자리·번호)

@@ -46,10 +46,10 @@ constexpr int OFF_SHOT = OFF_TILE + 3 * PER_TEAM * NF;        // 슛: me
 constexpr int OFF_STANCE_A = OFF_SHOT + PER_TEAM;             // 제자리 태세(월 사방): me
 constexpr int OFF_PLACE = OFF_STANCE_A + PER_TEAM;            // 배치: slot·NPL + 자기 진영 칸
 constexpr int OFF_SAVE = OFF_PLACE + (POOL_N + 1) * NPL;      // 공 없는 선수 「강하게」 모으기: 자기 칸
-constexpr int OFF_KEEP = OFF_SAVE + NF;                       // 키퍼 롱킥: (받는 me 0~3 · 4 = 빈 칸 루즈볼)·NF + 칸
-constexpr int OFF_STANCE_DIR = OFF_KEEP + (PER_TEAM + 1) * NF;   // 방향 태세: me·4 + 방향 (평가 팀 기준 — 원정은 ±x 를 바꾼다) DIRS 순서 +x·−x·+y·−y
+constexpr int OFF_KEEP = OFF_SAVE + NF;                       // 키퍼 롱킥: 받는 me·NF + 칸 (11-24 빈 칸 롱킥 없앰)
+constexpr int OFF_STANCE_DIR = OFF_KEEP + PER_TEAM * NF;   // 방향 태세: me·4 + 방향 (평가 팀 기준 — 원정은 ±x 를 바꾼다) DIRS 순서 +x·−x·+y·−y
 constexpr int NA = OFF_STANCE_DIR + PER_TEAM * 4;
-static_assert(NA == 1672, "수 칸 수 (판 5, 11-24) — tools/az/train.py CF_MODE=card · tools/cz/net_slim.py 와 같게");
+static_assert(NA == 1600, "수 칸 수 (판 5b, 11-24 빈 칸 롱킥 없앰) — tools/az/train.py CF_MODE=card · tools/cz/net_keep_drop.py 와 같게");
 int action_index(const State &s, const Action &a);
 
 // ---------- 망 (본편과 같은 몸통, 머리표 MAGIC만 다르다) ----------
@@ -74,11 +74,10 @@ void aux_from_env();
 // 티키타카 = 지공+지키기 · 토탈사커 = 지공+압박 · 게겐프레싱 = 역습+압박 · 선수비 후역습 = 역습+지키기. 다 0 이면 지금과 비트까지 같다
 struct Style {
 	float poss = 0.0f, ctr = 0.0f, press = 0.0f, hold = 0.0f;
-	float jk = 0.0f;   // 족보 의지 (11-12 둘째) — 족보를 완성하는 카드에 덤, 이어 가는 카드엔 작은 덤
 	int tac = -1;      // 전술 대본 (11-22, card_tactic.cpp): 0 게겐프레싱 · 1 티키타카 · 2 카테나치오 · −1 없음
 	float eps = 0.0f;  // 허용 폭: 뿌리에서 탐색 값이 최선 − eps 안인 수들 가운데 대본 점수가 가장 높은 수를 둔다
 	float pass = 0.0f; // 대본 패스 덤 (공격 중 패스·뒷공간 패스)
-	bool on() const { return poss != 0.0f || ctr != 0.0f || press != 0.0f || hold != 0.0f || jk != 0.0f || tac >= 0; }
+	bool on() const { return poss != 0.0f || ctr != 0.0f || press != 0.0f || hold != 0.0f || tac >= 0; }
 };
 extern float (*g_tac_score)(const State &s, const Action &a, const Style &st);   // card_tactic.cpp 가 채운다 (없으면 대본 없음 — 자가학습 gen3 은 링크하지 않음)
 float style_bias(const State &s, const Action &a, const Style &st);   // 그 수의 logit 덤 (s.turn_team 이 두는 수)

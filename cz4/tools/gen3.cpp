@@ -1,13 +1,12 @@
-// 감독 모드 자가학습 기보 공장 (11-19 판 4 — 카드 없음 · 4대4 · 축구 족보). flat(card_az Gumbel) 망이 자가대전하고 az::Rec 로 남긴다 (tools/az/train.py CF_MODE=card)
+// 감독 모드 자가학습 기보 공장 (11-19 판 4 — 카드 없음 · 4대4). flat(card_az Gumbel) 망이 자가대전하고 az::Rec 로 남긴다 (tools/az/train.py CF_MODE=card)
 //   gen3 <출력> <판수> <풀탐색> <빠른탐색> <풀 비율> <시드> <flat:망|flat:-> [flat:상대망 리그비율]
 //     flat:- = 망 없음 (손평가 가치 탐색 — 첫 바퀴)
 //     상대 망 + 리그 비율 = 그 비율의 판은 배우는 쪽(무작위 한 팀)만 이 망, 상대는 상대 망 — 배우는 쪽 수만 남긴다
 //   규칙: 4대4 · 직업 스킬 패시브(sk_passive) · 75 % 무작위 선수단(8직업·커리어 스탯 — 만능 없음 11-21)
-//   점수: 리그 판 = 승 +1 · 무 0 · 패 −1 · 토너먼트 판(CF_KO 비율, 기본 0.5) = 비기면 일기토(손평가 탐색)까지 둔 승패
+//   점수: 리그 판 = 승 +1 · 무 0 · 패 −1 · 토너먼트 판(CF_KO 비율, 기본 0.5) = 비기면 연장(차례 제한 없는 골든골)까지 같은 판에서 둔 승패 · 판 안전 상한(guard)에 걸리면 비김으로 기록
 //   학습 방법: 위아래 뒤집기 CF_FLIP(기본 0.5) · 판 중간 시작 CF_BRANCH(기본 0.15) · 앞 12수 온도 표본 · λ CF_LAMBDA 0.7 · 보조 머리(공 얻음·잃음·골)
-//   stderr 끝 줄 #gen3 … · #jk = 족보 6개 판 누적 (card.h Jokbo 순서)
+//   stderr 끝 줄 #gen3 …
 #include "../src/card_az.h"
-#include "../src/card_duel.h"
 #include "flip.h"
 
 #include <algorithm>
@@ -105,18 +104,16 @@ int main(int argc, char **argv) {
 	const double ko_frac = envf("CF_KO", 0.5), flip_frac = envf("CF_FLIP", 0.5), branch_frac = envf("CF_BRANCH", 0.15);
 	const double lam = envf("CF_LAMBDA", 0.7);
 	const double miss_v = envf("CF_BRANCH_MISS", 1.0);
-	const az::Net heur;
-	const az::Net *hn[2] = { &heur, &heur };
 	std::vector<az::Rec> fout;
 	long long snap_n[3] = {}, br_games = 0, br_kind[3] = {};
-	long long moves = 0, nodes = 0, goals = 0, shots = 0, duels = 0, ko_games = 0, lg_games = 0, lg_win = 0, lg_loss = 0, flipped = 0, jk[N_JK] = {};
+	long long moves = 0, nodes = 0, goals = 0, shots = 0, ots = 0, ko_games = 0, lg_games = 0, lg_win = 0, lg_loss = 0, flipped = 0;
 	int home = 0, away = 0, draws = 0;
 	Snap pool[3][1];
 	Rng rb(seed ^ 0x5A5A5A5AA5A5A5A5ull);
 	for (int g = 0; g < games; g++) {
 		Rng rng(seed * 1000003ull + g);
 		Rng rf((seed * 1000003ull + g) ^ 0x6969696996969696ull);
-		const bool ko = rng.unit() < ko_frac;
+		bool ko = rng.unit() < ko_frac;
 		const bool vs_league = league_frac > 0.0 && rng.unit() < league_frac;
 		const int learner = rng.next() % 2 ? AWAY : HOME;
 		int bsrc = -1;
@@ -134,8 +131,10 @@ int main(int argc, char **argv) {
 		if (rng.unit() < 0.75)   // 11-20 사용자 「구성 넓혀라」 35 → 75 % (나머지 25 % = 전원 신입생, 커리어 첫 경기 꼴)
 			for (int t = 0; t < 2; t++)
 				az::random_lineup(s, t, rng.next());
+		s.knockout = ko;
 		if (bsrc >= 0) {
-			s = pool[bsrc][0].s;
+			s = pool[bsrc][0].s;   // 판 중간 시작 — 녹아웃 여부도 그 판 그대로
+			ko = s.knockout;
 			br_games++, br_kind[bsrc]++;
 		}
 		ko_games += ko;
@@ -210,17 +209,12 @@ int main(int argc, char **argv) {
 			if (!scored && gain >= 0 && mag == 0.5f && s.phase == cf::PLAY)
 				keep(s, 2);
 		}
-		int win = s.phase == GAME_OVER ? s.winner : -1;
-		if (s.phase == GAME_OVER && win == -1 && ko) {
-			win = duel::resolve(s, hn, std::max(8, fast_sims), rng.next());
-			duels++;
-		}
+		const int win = s.phase == GAME_OVER ? s.winner : -1;   // 녹아웃 = 연장 골든골 (11-24 일기토 없앰) · 상한(guard)에 걸려 안 끝난 판은 비김
+		ots += s.ot;
 		(win == HOME ? home : win == AWAY ? away : draws)++;
 		if (vs_league)
 			lg_win += win == learner, lg_loss += win != -1 && win != learner;
 		goals += s.goals[0] + s.goals[1];
-		for (int k = 0; k < N_JK; k++)
-			jk[k] += s.jk_count[0][k] + s.jk_count[1][k];
 		moves += (long long)mover.size();
 		for (size_t i = 0; i < mover.size(); i++) {
 			const int me = mover[i];
@@ -236,11 +230,8 @@ int main(int argc, char **argv) {
 		return 1;
 	fwrite(fout.data(), sizeof(az::Rec), fout.size(), f);
 	fclose(f);
-	fprintf(stderr, "#jk");
-	for (int k = 0; k < N_JK; k++)
-		fprintf(stderr, " %lld", jk[k]);
-	fprintf(stderr, "\n#gen3 games=%d home=%d away=%d draw=%d goals=%lld moves=%lld sims=%lld shots=%lld duels=%lld ko=%lld league=%lld lwin=%lld lloss=%lld "
+	fprintf(stderr, "#gen3 games=%d home=%d away=%d draw=%d goals=%lld moves=%lld sims=%lld shots=%lld ot=%lld ko=%lld league=%lld lwin=%lld lloss=%lld "
 			"flip=%lld branch=%lld bmiss=%lld bgoal=%lld bsteal=%lld\n",
-			games, home, away, draws, goals, moves, nodes, shots, duels, ko_games, lg_games, lg_win, lg_loss, flipped, br_games, br_kind[0], br_kind[1], br_kind[2]);
+			games, home, away, draws, goals, moves, nodes, shots, ots, ko_games, lg_games, lg_win, lg_loss, flipped, br_games, br_kind[0], br_kind[1], br_kind[2]);
 	return 0;
 }

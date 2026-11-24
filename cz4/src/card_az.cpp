@@ -1,6 +1,5 @@
 // 카드 모드 알파제로 (card_az.h) — 탐색·망 읽기·전방 계산
 #include "card_az.h"
-#include "card_duel.h"
 
 #include <algorithm>
 #include <cmath>
@@ -99,7 +98,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[0] = s.phase == PLACEMENT;
 	d[1] = s.phase == PLAY;
 	d[2] = float(eff_hold(s)) / 5.0f;
-	d[3] = g_time_input ? float(std::max(0, std::min(s.half_turn(), g_half_turns))) / float(g_half_turns) : 0.0f;
+	d[3] = g_time_input ? float(std::max(0, std::min(s.half_turn(), g_half_turns))) / float(g_half_turns) : 0.0f;   // 연장(골든골)은 1 그대로
 	d[4] = float(s.goals[team]) / 2.0f;
 	d[5] = float(s.goals[opp]) / 2.0f;
 	d[6] = float(s.pts) / float(POINTS_PER_TURN);
@@ -154,11 +153,11 @@ int action_index(const State &s, const Action &a) {
 			const int p = g_tiles.place[flip_tile(a.dest, team)];
 			return p < 0 ? -1 : OFF_PLACE + a.uid * NPL + p;
 		}
-		case A_KEEP: {   // 키퍼 롱킥: 받는 아군(me) 발밑 · uid −1 = 빈 칸 루즈볼 (11-24)
-			const int k = a.uid < 0 ? PER_TEAM : me, f = ftile(a.dest, team);
-			if ((a.uid >= 0 && !mine) || f < 0)
+		case A_KEEP: {   // 키퍼 롱킥: 받는 아군(me) 발밑 (11-24 빈 칸 롱킥 없앰)
+			const int f = ftile(a.dest, team);
+			if (!mine || f < 0)
 				return -1;
-			return OFF_KEEP + k * NF + f;
+			return OFF_KEEP + me * NF + f;
 		}
 		case A_SAVE: {   // 공 없는 선수 「강하게」 모으기 — 자기 칸
 			const int f = ftile(a.dest, team);
@@ -373,8 +372,6 @@ float style_bias(const State &s, const Action &a, const Style &st) {
 	auto cheb = [](V2 x, V2 y) { return manhattan(x, y); };   // 거리 = 게임과 같은 맨해튼 (11-21 — 옛 체비쇼프는 대각 2칸 패스를 「짧은 패스」로 셌다)
 	const int gain = (a.dest.x - p.pos.x) * fwd;   // 앞으로 간 칸
 	float b = 0.0f;
-	if (st.jk != 0.0f && s.ball_team() == team && a.t == A_PASS && gain >= JK_AHEAD)
-		b += st.jk * 1.0f;   // 족보 의지 (11-21 족보 6개): 전진 패스가 되는 킥에 덤
 	if (s.ball_team() == team) {   // 공격
 		if (a.t == A_PASS) {
 			const int d = cheb(p.pos, a.dest);
@@ -871,7 +868,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	// 11-20 사용자 「구성 넓혀라」 — 커리어와 같은 꼴: 8직업 · 스탯은 킥(슛·패스 같이)·무브·디펜스 각 0~3
 	// 만능은 뺌 (11-20 사용자 「만능은 없고, 각 직업 4명씩」 — 옛 만능 에이스는 직업을 받음)
 	constexpr int JOBS_N = 10;   // 11-23 직업 9개 (스나이퍼를 캐논에 합침 — 옛 부스터 자리는 새 캐릭터 몫으로 빔 · 패서 = 옛 노마드 자리)
-	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, PASSER, RECEIVER };   // 11-24 리시버
+	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, PASSER, TARGETMAN };   // 11-24 타깃맨
 	int pos[PER_TEAM], bonus[PER_TEAM][4] = {}, rng_up[PER_TEAM] = {}, krng_up[PER_TEAM] = {}, hold_up[PER_TEAM] = {};
 	int used = 0;
 	const int prospects = int(next() % (PER_TEAM + 1));   // 유망주 0~4명 (11-24 옛 다섯째 자리 없앰 — 옛 0~5 의 4·5 는 둘 다 「모두 유망주」였다)
@@ -906,7 +903,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 				st[ok[next() % m]]++;   // 카드 1장 = +1 (11-23 스탯마다 한 번)
 			}
 		}
-		(pos[i] == MAESTRO || pos[i] == CANNON ? krng_up : pos[i] == WALL || pos[i] == RECEIVER ? hold_up : rng_up)[i] = st[4];
+		(pos[i] == MAESTRO || pos[i] == CANNON ? krng_up : pos[i] == WALL || pos[i] == TARGETMAN ? hold_up : rng_up)[i] = st[4];
 		bonus[i][ST_SHOT] = st[0];
 		bonus[i][ST_PASS] = st[1];
 		bonus[i][ST_DRIBBLE] = st[2];
@@ -914,10 +911,17 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	}
 	set_lineup(s, team, pos, bonus);
 	set_perks(s, team, rng_up, hold_up, krng_up);
-	// 골키퍼 성장 (11-24 사용자): 디펜스 +1 · 킥 범위 +1 · 둘 중 하나 한 번 더 — 선방형 디펜스 5 · 범위 5 / 발밑형 디펜스 4 · 범위 6
-	const int gn = int(next() % (level + 1)), side = int(next() % 2);   // 성장 0~3번
-	const int gd = gn == 0 ? 0 : gn == 2 ? 1 : gn == 1 ? side : 1 + side, gr = gn - gd;
-	set_keeper(s, team, GK_DEF0 + gd, GK_KICK0, GK_RANGE0 + gr);
+	// 골키퍼 성장 (11-24 사용자 — core/career.gd keeper_ok 와 같다): 디펜스·범위 중 고르기 · 모두 3번 · 스탯마다 +2 까지
+	// → 다 키우면 (디펜스 5 · 범위 5) 또는 (디펜스 4 · 범위 6). 성장 0~3번 = 팀 성장 정도
+	const int gn = int(next() % (level + 1));
+	int gk[2] = { 0, 0 };   // 디펜스 · 범위
+	for (int c = 0; c < gn; c++) {
+		int k = int(next() % 2);
+		if (gk[k] >= 2)
+			k = 1 - k;
+		gk[k]++;
+	}
+	set_keeper(s, team, GK_DEF0 + gk[0], GK_KICK0, GK_RANGE0 + gk[1]);
 }
 
 // 길 고르기용 상태 가치 (card.h value_path — 사용자 11-18 「길은 간 뒤의 상태로」): team 에 좋을수록 큼 (−1 ~ 1). ctx = const Net *

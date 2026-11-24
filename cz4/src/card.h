@@ -4,11 +4,10 @@
 // 게임 화면(CardNative 바인딩)과 자가학습(card_az · tools/cz)이 같은 코드를 쓴다 — 규칙이 두 벌이면 언젠가 어긋난다.
 //
 // 요약 (11-19 사용자 「카드 완전 없애라. 체력도」): 손패·덱·콤보·숫자 족보·체력이 없다.
-// 수 = 선수 고르기 → 행동(이동·킥·수비) → 칸. 선수마다 고정 수치 — 킥 3 · 수비 3 · 이동 2 + 스탯업 + 직업·족보 보정.
+// 수 = 선수 고르기 → 행동(이동·킥·수비) → 칸. 선수마다 고정 수치 — 킥 3 · 수비 3 · 이동 2 + 스탯업 + 직업 보정.
 // 킥 힘 = min(킥 수치, 6 − 거리) (하한 1) · 킥 범위 4 · 이동 범위 = 이동 수치(기준 3) · 수비 태세 힘 = 수비 수치.
 // 슛 = 슛 길의 경합(땅볼 존)을 뚫고 골대 칸에 닿으면 골 (11-21 골문 체력·슛 데미지 없앰).
-// 11-21 사용자 공통 규칙: 차례 종료 수 없음(포인트를 다 쓴다) · 한 차례 안 되돌아가기 금지(사람·공) ·
-// 축구 족보 6개 — 걸린 순간 행동 포인트 +1, 한 차례 한 번 (11-21 부터 모두 꺼 둠).
+// 11-21 사용자 공통 규칙: 차례 종료 수 없음(포인트를 다 쓴다) · 한 차례 안 되돌아가기 금지(사람·공) · 족보 없음(11-24 삭제).
 #include "engine.h"
 
 #include <cstdint>
@@ -18,7 +17,7 @@ namespace card {
 
 constexpr int CARD_HALF_TURNS = 60;   // 한 판 = 팀당 30차례 · 전후반 없음 (11-24 사용자 「전후반 없애고 ㄱ」) — 이름은 옛것(반 = 경기 하나)
 constexpr int WIN_GOALS = 3;          // 먼저 3골이면 바로 끝 (11-24)
-constexpr int RECEIVE_HOLD = 4;   // 리시버가 공을 잡을 때 버티는 힘 (11-24 사용자 「버티기 4 전직 혜택 · 메인 스탯업 +1」)
+constexpr int TARGET_HOLD = 4;   // 타깃맨가 공을 잡을 때 버티는 힘 (11-24 사용자 「버티기 4 전직 혜택 · 메인 스탯업 +1」)
 constexpr int GK_DEF0 = 3, GK_KICK0 = 4, GK_RANGE0 = 4;   // 골키퍼 기본: 디펜스(= 체력) 3 · 킥 힘 4 · 킥 범위 4 (11-24 사용자)
 extern int g_time_input;   // 0 = 망 입력에서 시간(반 진행·후반)을 0 으로 (자가학습 CF_NO_TIME)
 extern int g_half_turns;   // 반 길이(두 팀 합 차례) — 자가학습만 CF_HALF_TURNS 로 바꾼다
@@ -26,20 +25,13 @@ enum CardType { C_KICK = 0, C_MOVE = 1, C_DEF = 2, C_SHOT = 3 };   // 행동 셋
 enum Role { R_ATK = 0, R_DEF = 1 };   // 공 가진 팀 = 공격
 constexpr int CARD_POOL_N = 10;
 
-// 선수 기준 수치 (11-19 사용자 · 11-21 이동 3): 킥 3 · 수비 3 · 이동 3 — 여기에 스탯업(bonus)·직업·족보 보정을 더한다
+// 선수 기준 수치 (11-19 사용자 · 11-21 이동 3): 킥 3 · 수비 3 · 이동 3 — 여기에 스탯업(bonus)·직업 보정을 더한다
 constexpr int BASE_KICK = 4, BASE_DEF = 3, BASE_MOVE = 3;
 constexpr int MOVE_RANGE = 3;      // 무브 범위 3 고정 — 무브 수치(힘)와 따로 (11-22 사용자 「무브 범위 = 힘 아님」) · 스프린터만 늘어남   // 11-22 사용자 「계산식 하나 · 범위 = 능력치」: 힘 = 능력치 + 1 − 거리 · 킥 4 (옛 「3 + 2 − 거리」와 같은 값)
 constexpr int KICK_RANGE = 4;     // 킥 범위 상한 (범위 보너스만큼 늘어남)
 
-// 축구 족보 6개 (11-21 사용자 — 두 팀 모두, 옛 9개 없앰). 모두 그 한 수에서 바로 판정 · 혜택 = 걸린 순간 행동 포인트 +1 · 같은 족보는 한 차례에 한 번.
-// 표 g_jk 한 곳(이름·켬) — 화면 이름도 이 표 (CardNative.jk_table)
-enum Jokbo { JK_GEGEN = 0, JK_WALL, JK_TRIANGLE, JK_SUPPORT, JK_FORWARD, JK_BREAK, N_JK };
-struct JkInfo { const char *name; int on; };   // on 0 = 꺼진 족보 (안 걸린다)
-extern JkInfo g_jk[N_JK];
 extern int g_goal_hp;   // 측정용 CF_GOAL_HP — 0 이 아니면 두 팀 골키퍼 디펜스를 이 값으로 (규칙 = 팀마다 gk_def)
 extern int g_zone4;   // 0 = 곁 한 칸 방향 존 · 월만 사방 (규칙, 11-23) · 1 = 모든 선수 4방 존 (비교용)
-constexpr int JK_NEAR = 2;   // 지원·삼각 패스의 「2칸 안」(맨해튼)
-constexpr int JK_AHEAD = 3;  // 전진 패스·돌파의 「3칸 이상 앞」
 
 // A_SAVE = 공 없는 선수 「강하게」(11-22 — 옛 키퍼 킥 번호 자리, dest = 자기 칸) · 7 = 빈 번호(옛 차례 끝·전술) · 9 = 옛 뒷공간 패스 A_RUN (11-22 부터 스루패스가 대신 — 11-24 없앰)
 enum Act { A_MOVE = 0, A_DRIBBLE, A_PASS, A_SHOT, A_STANCE, A_PLACE, A_KEEP, A_FREE7, A_SAVE };   // A_KEEP(6) = 키퍼 롱킥 — uid = 받는 아군 · dest = 그 칸 (11-23 · 옛 빈 번호)
@@ -54,7 +46,6 @@ struct Player {
 	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 · 월은 2 — 11-21 사용자 「월 2턴 4방 존」)
 	int acted = 0;         // 이번 차례에 행동함 (11-22 사용자 「한 선수는 한 차례에 행동 하나」) — 우리 차례 시작에 0 · 「강하게」 모으기는 안 셈
 	int charge = 0;        // 「강하게」 (11-22 셋째 — 사용자 「2액포 = 힘 +1 · 패스·슛·드리블·디펜스, 이동은 없음」): 2 = 이번 차례 다음 패스·슛·드리블·디펜스 1번이 힘 +1 — 포인트 2개짜리 행동의 앞 반 · 쓰거나 공을 잃거나 차례가 끝나면 0
-	int jk_up = 0;         // 족보 +1 토큰 (11-21 사용자): 1 이면 모든 판정 힘 +1 (겹치지 않음) · 우리 다음 차례 시작에 없어짐
 	int zdir = -1;         // 존 방향 (11-21 사용자): DIRS 번호 0~3 = 곁 한 칸 · ZD_ALL = 사방 4칸(월). stance 0 이면 뜻 없음
 	int bonus[4] = { 0, 0, 0, 0 };   // 스탯업 — 슛·패스(= 킥)·드리블(= 이동)·수비
 	int range_up = 0;      // 이동 범위 +1 (옛 전성기 — 저장 호환)
@@ -81,17 +72,15 @@ struct State {
 	int half_order[PLAYERS] = {};
 	int opener = HOME;
 	int goals[2] = { 0, 0 };
+	int knockout = 0;   // 1 = 단판 토너먼트 (비기면 연장 — 리그전은 0, 무승부 그대로)
+	int ot = 0;         // 1 = 연장 중 (정규 g_half_turns 뒤 · 차례 제한 없는 골든골 — 먼저 넣으면 승, 11-24 사용자)
 	int keeper = -1;                    // 슛을 막은 키퍼가 공을 쥔 팀 (−1 = 없음) — 그 팀 다음 차례 첫 수 = 키퍼 롱킥(포인트 2 · 필드 위 아군 고르기, 11-23 사용자)
 	int ghp[2] = { 0, 0 };
-	int gk_def[2] = { GK_DEF0, GK_DEF0 }, gk_kick[2] = { GK_KICK0, GK_KICK0 }, gk_range[2] = { GK_RANGE0, GK_RANGE0 };   // 골키퍼 스탯 (성장 = 디펜스 +1 · 킥 범위 +1 · 하나 더 아무 쪽)              // 팀 t 골대(키퍼) 남은 체력 — 슛의 남은 힘만큼 깎이고 0 이하면 골 · 킥오프(경기·반 시작·골 뒤)마다 다시 참 (11-23 사용자)
+	int gk_def[2] = { GK_DEF0, GK_DEF0 }, gk_kick[2] = { GK_KICK0, GK_KICK0 }, gk_range[2] = { GK_RANGE0, GK_RANGE0 };   // 골키퍼 스탯 (성장 = 디펜스·범위 중 고르기 3번 · 스탯마다 +2 까지 — 11-24)              // 팀 t 골대(키퍼) 남은 체력 — 슛의 남은 힘만큼 깎이고 0 이하면 골 · 킥오프(경기·반 시작·골 뒤)마다 다시 참 (11-23 사용자)
 	int role[2] = { R_DEF, R_ATK };
 	int hold = 0;                      // 공 임자가 태클을 버티는 힘 = 그 선수 드리블 능력치 (막 뺏은 공 = 뺏은 선수 태클 능력치) — 11-21 사용자, 차례마다 줄지 않음
 	int touch_team = -1, touch_mask = 0;   // 이번 공격에서 공을 만진 아군 (uid 비트) — 가담
 	int poss_turn = 0;                     // 공 임자 팀이 바뀐 때의 turn_count (전술 대본 「뺏은 뒤 몇 차례」 — 규칙엔 안 쓴다, 11-22)
-	// 족보 (11-21): jk_turn = 그 팀 지금 차례에 걸린 족보 비트 · jk_next = 남의 차례에 걸려 그 팀 다음 차례 몫(+1 은 그 차례 시작에 더함) · jk_count = 판 누적
-	int jk_turn[2] = { 0, 0 };
-	int jk_next[2] = { 0, 0 };
-	int jk_count[2][N_JK] = {};
 		Player players[PLAYERS];
 	// 직업 능력은 모두 상시 (11-19 사용자 둘째 결정 — 게이지·켜기 없음). sk_uid·sk_kind 는 옛 「켠 수」 자리 (늘 −1·0)
 	int sk_uid = -1;
@@ -110,7 +99,7 @@ struct State {
 };
 
 extern int g_range_bonus, g_air_max;
-void knobs_from_env();   // CF_HALF_TURNS · CF_NO_TIME · CF_JK (족보 켬 덮어쓰기)
+void knobs_from_env();   // CF_HALF_TURNS · CF_NO_TIME · 측정용 스위치
 
 struct Action {
 	int t = -1;
@@ -134,7 +123,7 @@ int kick_stat(const State &s, const Player &p, int use);   // 거리 전 킥 수
 
 // 화면 연출용 기록 (nullptr이면 조용하다 — 탐색 중에는 끈다)
 struct Event {
-	int kind;   // 0 경합 · 1 밀림 · 2 골 · 4 길 · 5 슛 막힘 · 6 직업 스킬 발동(a uid · b 포지션) · 7 족보(a 팀 · b 족보 번호)
+	int kind;   // 0 경합 · 1 밀림 · 2 골 · 4 길 · 5 슛 막힘 · 6 직업 스킬 발동(a uid · b 포지션) · 9 키퍼가 막음
 	int a, b;
 	V2 at;
 	int va, vb, win;
@@ -150,9 +139,6 @@ void outcome_paths(const State &s, const Action &a, std::vector<std::vector<V2>>
 typedef float (*PathValue)(const State &s, int team, const void *ctx);
 bool value_path(const State &s, const Action &a, PathValue val, const void *ctx, std::vector<V2> &out);
 int assist_value(const State &s, int team);
-bool jk_enabled(const State &s, int team, int k);   // 그 팀에 그 족보가 걸릴 수 있나 — 지금은 표의 on (팀마다 달라지면 여기 한 곳)
-inline int jokbo_mask(const State &s, int team) { return s.turn_team == team ? s.jk_turn[team] : s.jk_next[team]; }   // 그 팀 지금(다음) 차례에 이미 걸린 족보
-void turn_clear(State &s);   // 이번 차례 기록(지나간 칸·족보)을 새로 — 차례 시작·일기토 판
 void end_turn(State &s);
 bool marked(const State &s, const Player &p);
 int pool_slot(int position);
