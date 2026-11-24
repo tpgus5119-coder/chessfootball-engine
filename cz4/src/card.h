@@ -72,6 +72,7 @@ struct State {
 	int ball_owner = -1;
 	V2 ball_pos = UNPLACED;   // 루즈볼
 	int loose_team = -1;
+	int loose_by = -1;     // 스루패스를 찬 선수 — 저절로 달려가 받기에서 뺀다 (11-24 사용자)
 	int pts = 0;
 	int turn_count = 0;
 	int winner = -1;   // GAME_OVER에서 −1 = 무승부

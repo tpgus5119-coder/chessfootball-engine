@@ -45,6 +45,7 @@ void CardNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("dev_ball", "owner", "x", "y", "turn_team"), &CardNative::dev_ball);
 	ClassDB::bind_method(D_METHOD("dev_pos", "uid", "position"), &CardNative::dev_pos);
 	ClassDB::bind_method(D_METHOD("dev_ghp", "team", "hp"), &CardNative::dev_ghp);
+	ClassDB::bind_method(D_METHOD("set_keeper", "team", "def", "kick", "range"), &CardNative::set_keeper);
 	ClassDB::bind_method(D_METHOD("act_range", "uid", "want", "sk"), &CardNative::act_range, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("jk_table"), &CardNative::jk_table);
 	ClassDB::bind_method(D_METHOD("act_power", "uid", "use", "dist", "sk"), &CardNative::act_power, DEFVAL(0), DEFVAL(0));
@@ -159,7 +160,16 @@ Dictionary CardNative::get_state() const {
 	for (int t = 0; t < 2; t++)
 		ghp.push_back(s.ghp[t]);
 	d["ghp"] = ghp;   // 골키퍼 남은 체력 (11-23)
-	d["ghp_max"] = ck::g_goal_hp;
+	Array gmax, gkick, grange;
+	for (int t = 0; t < 2; t++) {
+		gmax.push_back(s.gk_def[t]);
+		gkick.push_back(s.gk_kick[t]);
+		grange.push_back(s.gk_range[t]);
+	}
+	d["ghp_max"] = gmax;   // 골키퍼 디펜스 = 체력 최대 [홈, 원정] (11-24 팀마다)
+	d["gk_kick"] = gkick;
+	d["gk_range"] = grange;
+	d["keeper"] = s.keeper;   // 슛을 막은 키퍼가 공을 쥔 팀 (−1 = 없음) — 화면의 키퍼 롱킥 차례 표시 (11-23)
 	d["role"] = role;
 	Array ps;
 	for (const ck::Player &p : s.players) {
@@ -452,6 +462,7 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 	s.ball_owner = owner;
 	s.ball_pos = owner >= 0 ? cf::UNPLACED : cf::V2{ x, y };
 	s.loose_team = owner >= 0 ? -1 : turn_team;
+	s.loose_by = -1;
 	const int bt = s.ball_team();
 	for (int t = 0; t < 2; t++)
 		s.role[t] = t == bt ? ck::R_ATK : ck::R_DEF;
@@ -459,6 +470,10 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 	ck::turn_clear(s);   // 개발용 판 — 지나간 칸·족보는 새로
 }
 
+
+void CardNative::set_keeper(int team, int def, int kick, int range) {   // 골키퍼 스탯 (커리어 성장 — 경기 시작 전에)
+	ck::set_keeper(cur(), team, def, kick, range);
+}
 
 void CardNative::dev_ghp(int team, int hp) {   // 개발·시험용 — 골키퍼 남은 체력 놓기 (11-23)
 	if (team == 0 || team == 1)

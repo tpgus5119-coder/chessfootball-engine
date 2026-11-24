@@ -212,7 +212,7 @@ static void set_owner(State &s, int uid) {
 			q.charge = 0;   // 공을 놓으면 모은 힘은 사라진다
 	s.ball_owner = uid;
 	s.ball_pos = UNPLACED;
-	s.loose_team = -1;
+	s.loose_team = -1, s.loose_by = -1;
 	s.hold = 0;
 	if (uid != -1) {
 		Player &p = s.players[uid];
@@ -495,7 +495,7 @@ static void reset_shape(State &s, int stay = -1) {
 	}
 	s.ball_owner = -1;
 	s.ball_pos = UNPLACED;
-	s.loose_team = -1;
+	s.loose_team = -1, s.loose_by = -1;
 	s.keeper = -1;
 	s.hold = 0;
 	s.touch_team = -1;
@@ -1267,7 +1267,7 @@ static bool do_pass(State &s, int uid, V2 dest) {
 			q.charge = 0;
 		s.ball_owner = -1;
 		s.ball_pos = dest;
-		s.loose_team = team;
+		s.loose_team = team, s.loose_by = uid;
 		s.hold = 0;
 	}
 	if (s.ball_team() == team && (dest.x - from.x) * forward_dir(team) > 0)
@@ -1323,7 +1323,7 @@ static bool do_shot(State &s, int uid) {
 			q.charge = 0;
 		s.ball_owner = -1;
 		s.ball_pos = UNPLACED;
-		s.loose_team = -1;
+		s.loose_team = -1, s.loose_by = -1;
 		s.hold = 0;
 		s.keeper = keeper;
 		emit({ 9, keeper, -1, goal, s.ghp[keeper], pow, 0, {} });   // 사건 9 = 키퍼가 막음 (a = 키퍼 팀 · at = 골대 칸 · va = 남은 체력 · vb = 깎은 힘)
@@ -1682,10 +1682,10 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 			for (int k = 1; k <= (q.position == ALLROUND ? 2 : 1); k++)
 				gen(q, k);
 	}
-	if (s.loose_ball() && s.loose_team == team) {   // 스루패스 = 저절로 달려가 받기 (11-24 사용자) — 루즈볼 칸으로 뛰어 닿는 동료의 이동만 (여럿이면 고르기 · 포인트가 없으면 다음 우리 차례 처음). 아무도 못 닿으면 보통 수
+	if (s.loose_ball() && s.loose_team == team) {   // 스루패스 = 저절로 달려가 받기 (11-24 사용자) — 루즈볼 칸으로 뛰어 닿는 동료(찬 선수 빼고)의 이동만 (여럿이면 고르기 · 포인트가 없으면 다음 우리 차례 처음). 아무도 못 닿으면 보통 수
 		std::vector<Action> run;
 		for (const Action &a : out)
-			if (a.t == A_MOVE && a.dest == s.ball_pos)
+			if (a.t == A_MOVE && a.dest == s.ball_pos && a.uid != s.loose_by)
 				run.push_back(a);
 		if (!run.empty())
 			out.swap(run);

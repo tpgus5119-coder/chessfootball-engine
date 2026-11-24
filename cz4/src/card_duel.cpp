@@ -29,7 +29,7 @@ static void begin_attack(Duel &d, int team) {
 	s.pts = POINTS_PER_TURN;
 	s.ball_owner = atk;
 	s.ball_pos = UNPLACED;
-	s.loose_team = -1;
+	s.loose_team = -1, s.loose_by = -1;
 	s.hold = 0;
 	s.touch_team = team;
 	s.touch_mask = 1 << atk;
