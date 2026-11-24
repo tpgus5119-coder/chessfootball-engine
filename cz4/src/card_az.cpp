@@ -13,7 +13,7 @@ namespace az {
 
 static inline int flip_tile(V2 t, int team) { return t.y * W + (team == AWAY ? W - 1 - t.x : t.x); }
 
-// 칸 → 입력·수 칸 번호 (뒤집은 칸 기준): 박스 밖 72칸 · 자기 진영 박스 밖 32칸 (−1 = 그 칸 없음)
+// 칸 → 입력·수 칸 번호 (뒤집은 칸 기준): 박스 밖 80칸 · 자기 진영 박스 밖 40칸 (−1 = 그 칸 없음)
 static const struct Tiles {
 	int8_t field[NT], place[NT];
 	Tiles() {
@@ -60,10 +60,8 @@ void net_input(const State &s, int team, NetInput &in) {
 		for (int k = 0; k < 4; k++)
 			if (q.bonus[k] > 0)
 				add(in, OFF_PSTAT + (rel * 4 + k) * NF, f);
-		if (q.range_up > 0)
-			add(in, OFF_PERK + (rel * 2 + 0) * NF, f);
-		if (q.kick_range_up > 0)
-			add(in, OFF_PERK + (rel * 2 + 1) * NF, f);
+		if (s.gk[q.team] == q.uid)
+			add(in, OFF_GK + rel * NF, f);   // 골대 안이면 f < 0 — 입력 없음 (d[22]·d[23])
 		if (q.hold_up > 0)
 			add(in, OFF_HOLDUP + rel * NF, f);
 		if (q.charge && rel == 0)   // 「강하게」는 두는 팀 차례 안에서만 — 상대 칸은 늘 0 이라 없다
@@ -87,8 +85,6 @@ void net_input(const State &s, int team, NetInput &in) {
 			}
 		}
 	}
-	if (s.loose_ball())
-		add(in, OFF_LOOSE + (s.loose_team == team ? 0 : 1) * NF, ftile(s.ball_pos, team));
 	if (s.phase == PLACEMENT && !s.redeploy)
 		for (int r = 0; r < 2; r++)
 			for (int k = 0; k < CARD_POOL_N; k++)
@@ -117,6 +113,10 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[19] = s.keeper == opp;
 	d[20] = s.ot;          // 연장(골든골) 중 (11-24 둘째 사용자 「연장 중인지 AI 망 입력에」)
 	d[21] = s.knockout;    // 토너먼트(단판 — 비기면 연장) · 리그는 0
+	d[22] = s.gk_in(team);   // 골키퍼가 골대 안 (11-24 셋째 — 밖이면 골대 체력 0) — 우리 · 상대
+	d[23] = s.gk_in(opp);
+	d[24] = float(s.gk_kick[team]) / 6.0f;   // 키퍼 롱킥 힘 — 우리 · 상대 (11-24 셋째 사용자)
+	d[25] = float(s.gk_kick[opp]) / 6.0f;
 }
 
 int action_index(const State &s, const Action &a) {
@@ -129,6 +129,8 @@ int action_index(const State &s, const Action &a) {
 		case A_MOVE:
 		case A_DRIBBLE:
 		case A_PASS: {
+			if (a.t == A_MOVE && is_goal_of(team, a.dest))
+				return mine ? OFF_GKIN : -1;   // 골키퍼가 골대로 돌아감
 			const int f = ftile(a.dest, team);
 			if (!mine || f < 0)
 				return -1;
@@ -360,7 +362,7 @@ float style_bias(const State &s, const Action &a, const Style &st) {
 	const Player &p = s.players[a.uid];
 	if (p.team != team || p.pos == UNPLACED)
 		return 0.0f;
-	const V2 ball = s.ball_owner >= 0 ? s.players[s.ball_owner].pos : s.ball_pos;
+	const V2 ball = s.ball_owner >= 0 ? s.players[s.ball_owner].pos : UNPLACED;
 	auto cheb = [](V2 x, V2 y) { return manhattan(x, y); };   // 거리 = 게임과 같은 맨해튼 (11-21 — 옛 체비쇼프는 대각 2칸 패스를 「짧은 패스」로 셌다)
 	const int gain = (a.dest.x - p.pos.x) * fwd;   // 앞으로 간 칸
 	float b = 0.0f;
@@ -857,18 +859,16 @@ void random_lineup(State &s, int team, unsigned long long r) {
 		r ^= r >> 27;
 		return r * 0x2545F4914F6CDD1Dull;
 	};
-	// 11-20 사용자 「구성 넓혀라」 — 커리어와 같은 꼴: 직업 10 · 스탯은 카드 셈
-	// 선수단 5명 = 판 4명 + 키퍼 1명 (11-24 둘째 사용자 「경기 전에 5명 중 1명을 키퍼로」) — 키퍼는 절반은 디펜스가 가장 높은 선수(커리어 기본값·상대 학교), 절반은 아무나
-	constexpr int JOBS_N = 10;
-	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, PASSER, TARGETMAN };
-	constexpr int SQ = PER_TEAM + 1;
-	int pos[SQ], bonus[SQ][4] = {}, rng_up[SQ] = {}, krng_up[SQ] = {}, hold_up[SQ] = {};
+	// 커리어와 같은 꼴: 직업 9 · 성장은 카드 셈 · 선수단 5명 중 골키퍼 1명 (절반은 디펜스가 가장 높은 선수 = 커리어 기본값·상대 학교, 절반은 아무나 — 11-24 셋째)
+	constexpr int JOBS_N = 9;
+	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, TARGETMAN };
+	constexpr int SQ = PER_TEAM;
+	int pos[SQ], bonus[SQ][4] = {}, hold_up[SQ] = {};
 	int used = 0;
 	const int prospects = int(next() % (SQ + 1));          // 유망주 0~5명
 	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 카드 0 ~ 2·level+1 장
 	const int mono = next() % 5 == 0 ? POOL[next() % JOBS_N] : 0;   // 20 % 는 한 직업 팀
-	// 몰아 키운 에이스 (11-23 사용자): 30 % 팀은 전직 선수 한 명이 카드 8~13장
-	const bool ace_team = next() % 10 < 3;
+	const bool ace_team = next() % 10 < 3;   // 몰아 키운 에이스 (11-23): 30 % 팀은 전직 선수 한 명이 카드 많이
 	const int ace = ace_team && prospects < SQ ? prospects + int(next() % (SQ - prospects)) : -1;
 	for (int i = 0; i < SQ; i++) {
 		if (i < prospects) {
@@ -883,8 +883,8 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			used |= 1 << k;
 			pos[i] = POOL[k];
 		}
-		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(마에스트로 패스 범위 · 캐논 슛 범위 · 스프린터 무브 범위 · 월 지속 · 타깃맨 버티기)
-		if (pos[i] != PROSPECT && (level > 0 || i == ace)) {   // 성장은 전직한 선수만 — 커리어와 같은 카드 셈 (카드 1장 = +1 · 스탯마다 한 번, 11-23)
+		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(월 지속 · 타겟맨 버티기)
+		if (pos[i] != PROSPECT && (level > 0 || i == ace)) {   // 성장은 전직한 선수만 (카드 1장 = +1 · 스탯마다 한 번)
 			const int n = i == ace ? 8 + int(next() % 6) : int(next() % (2 * level + 2));
 			for (int c = 0; c < n; c++) {
 				int ok[GROW_K], m = 0;
@@ -896,34 +896,15 @@ void random_lineup(State &s, int team, unsigned long long r) {
 				st[ok[next() % m]]++;
 			}
 		}
-		(pos[i] == MAESTRO || pos[i] == CANNON ? krng_up : pos[i] == WALL || pos[i] == TARGETMAN ? hold_up : rng_up)[i] = st[4];
+		hold_up[i] = st[4];
 		bonus[i][ST_SHOT] = st[0];
 		bonus[i][ST_PASS] = st[1];
 		bonus[i][ST_DRIBBLE] = st[2];
 		bonus[i][ST_DEF] = st[3];
 	}
-	int gk = int(next() % SQ), ks[3];
-	if (next() % 2) {   // 디펜스가 가장 높은 선수 (같으면 뒤 선수 — core/career.gd keeper_auto 와 같다)
-		int best = -1;
-		for (int i = 0; i < SQ; i++) {
-			keeper_stats(pos[i], bonus[i], krng_up[i], ks);
-			if (ks[0] >= best)
-				best = ks[0], gk = i;
-		}
-	}
-	keeper_stats(pos[gk], bonus[gk], krng_up[gk], ks);
-	int fp[PER_TEAM], fb[PER_TEAM][4], fr[PER_TEAM], fk[PER_TEAM], fh[PER_TEAM];
-	for (int i = 0, o = 0; i < SQ; i++) {
-		if (i == gk)
-			continue;
-		fp[o] = pos[i], fr[o] = rng_up[i], fk[o] = krng_up[i], fh[o] = hold_up[i];
-		for (int k = 0; k < 4; k++)
-			fb[o][k] = bonus[i][k];
-		o++;
-	}
-	set_lineup(s, team, fp, fb);
-	set_perks(s, team, fr, fh, fk);
-	set_keeper(s, team, ks[0], ks[1], ks[2]);
+	const int gk = next() % 2 ? default_gk(pos, bonus) : int(next() % SQ);
+	set_lineup(s, team, pos, bonus, gk);
+	set_perks(s, team, hold_up);
 }
 
 // 길 고르기용 상태 가치 (card.h value_path — 사용자 11-18 「길은 간 뒤의 상태로」): team 에 좋을수록 큼 (−1 ~ 1). ctx = const Net *

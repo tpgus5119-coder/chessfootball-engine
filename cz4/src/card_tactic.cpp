@@ -56,8 +56,6 @@ void set_roles() {
 	put(0, MAESTRO, { 4, 5, 4, 6, R_LINK });
 	put(0, WALL, { 2, 4, 3, 4, R_REST });
 	put(0, TITAN, { 3, 4, 3, 5, R_REST });
-	put(0, LONGSHOT, { 5, 7, 6, 8, R_FIN });
-	put(0, PASSER, { 4, 5, 4, 6, R_LINK });
 	put(1, MAESTRO, { 4, 5, 4, 6, R_LINK });
 	put(1, TRICKSTER, { 4, 5, 5, 7, R_CARRY });
 	put(1, SPRINTER, { 4, 5, 5, 8, 0 });
@@ -66,8 +64,6 @@ void set_roles() {
 	put(1, MARKER, { 3, 5, 4, 5, R_MARK });
 	put(1, WALL, { 2, 4, 3, 4, R_REST });
 	put(1, TITAN, { 3, 4, 4, 6, 0 });
-	put(1, LONGSHOT, { 4, 5, 5, 7, R_FIN });
-	put(1, PASSER, { 4, 5, 4, 6, R_LINK });
 	put(2, WALL, { 0, 2, 1, 3, R_REST });
 	put(2, HUNTER, { 2, 3, 2, 4, R_PRESS1 });
 	put(2, MARKER, { 1, 3, 2, 3, R_MARK });
@@ -76,8 +72,6 @@ void set_roles() {
 	put(2, SPRINTER, { 4, 5, 6, 9, R_RUN | R_OUTLET });
 	put(2, CANNON, { 3, 4, 5, 7, R_FIN });
 	put(2, TRICKSTER, { 3, 4, 4, 7, R_CARRY });
-	put(2, LONGSHOT, { 3, 4, 5, 7, R_FIN });
-	put(2, PASSER, { 2, 4, 3, 5, 0 });
 }
 struct Init {
 	Init() { set_roles(); }
@@ -131,7 +125,7 @@ bool space_ahead(const State &s, int team, V2 b) {
 Sit read(const State &s) {
 	Sit x{};
 	x.team = s.turn_team, x.opp = opponent(s.turn_team);
-	x.ball = s.ball_owner >= 0 ? s.players[s.ball_owner].pos : s.ball_pos;
+	x.ball = s.ball_owner >= 0 ? s.players[s.ball_owner].pos : UNPLACED;
 	x.atk = s.ball_team() == x.team;
 	const int age = std::max(0, (s.turn_count - s.poss_turn + 1) / 2);
 	x.lost_now = !x.atk && age <= 1;

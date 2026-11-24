@@ -31,8 +31,8 @@ static void put_action(PackedInt32Array &out, const ck::Action &a) {
 void CardNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("new_match", "first"), &CardNative::new_match);
 	ClassDB::bind_method(D_METHOD("set_knockout", "on"), &CardNative::set_knockout);
-	ClassDB::bind_method(D_METHOD("set_lineup", "team", "positions", "bonus"), &CardNative::set_lineup);
-	ClassDB::bind_method(D_METHOD("set_perks", "team", "range_up", "hold_up", "kick_range_up"), &CardNative::set_perks, DEFVAL(PackedInt32Array()));
+	ClassDB::bind_method(D_METHOD("set_lineup", "team", "positions", "bonus", "gk"), &CardNative::set_lineup, DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("set_perks", "team", "hold_up"), &CardNative::set_perks);
 	ClassDB::bind_method(D_METHOD("set_trial", "team_n"), &CardNative::set_trial);
 	ClassDB::bind_method(D_METHOD("get_state"), &CardNative::get_state);
 	ClassDB::bind_method(D_METHOD("actions"), &CardNative::actions);
@@ -44,8 +44,7 @@ void CardNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("dev_ball", "owner", "x", "y", "turn_team"), &CardNative::dev_ball);
 	ClassDB::bind_method(D_METHOD("dev_pos", "uid", "position"), &CardNative::dev_pos);
 	ClassDB::bind_method(D_METHOD("dev_ghp", "team", "hp"), &CardNative::dev_ghp);
-	ClassDB::bind_method(D_METHOD("set_keeper", "team", "def", "kick", "range"), &CardNative::set_keeper);
-	ClassDB::bind_static_method("CardNative", D_METHOD("keeper_stats", "position", "bonus", "kick_range_up"), &CardNative::keeper_stats);
+	ClassDB::bind_static_method("CardNative", D_METHOD("keeper_stats", "position", "bonus"), &CardNative::keeper_stats);
 	ClassDB::bind_method(D_METHOD("act_range", "uid", "want", "sk"), &CardNative::act_range, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("act_power", "uid", "use", "dist", "sk"), &CardNative::act_power, DEFVAL(0), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("ai_load", "bytes"), &CardNative::ai_load);
@@ -69,31 +68,28 @@ void CardNative::set_knockout(bool on) {
 	state.knockout = on ? 1 : 0;
 }
 
-void CardNative::set_perks(int team, PackedInt32Array range_up, PackedInt32Array hold_up, PackedInt32Array kick_range_up) {
+void CardNative::set_perks(int team, PackedInt32Array hold_up) {
 	if (team < 0 || team > 1)
 		return;
-	int r[cf::PER_TEAM] = {}, h[cf::PER_TEAM] = {}, k[cf::PER_TEAM] = {};
-	for (int i = 0; i < cf::PER_TEAM; i++) {
-		r[i] = i < range_up.size() ? int(range_up[i]) : 0;
+	int h[cf::PER_TEAM] = {};
+	for (int i = 0; i < cf::PER_TEAM; i++)
 		h[i] = i < hold_up.size() ? int(hold_up[i]) : 0;
-		k[i] = i < kick_range_up.size() ? int(kick_range_up[i]) : 0;
-	}
-	ck::set_perks(state, team, r, h, k);
+	ck::set_perks(state, team, h);
 }
 
 // 시험판 (11-18 혼자하기): 팀 인원 · 직업 스킬 패시브 — new_match 바로 뒤
 void CardNative::set_trial(int team_n) { ck::set_trial(state, team_n); }
 
-void CardNative::set_lineup(int team, PackedInt32Array positions, PackedInt32Array bonus) {
-	if (team < 0 || team > 1 || positions.size() < cf::PER_TEAM)
+void CardNative::set_lineup(int team, PackedInt32Array positions, PackedInt32Array bonus, int gk) {
+	if (team < 0 || team > 1 || positions.size() < 1)
 		return;
 	int pos[cf::PER_TEAM], b[cf::PER_TEAM][4] = {};
 	for (int i = 0; i < cf::PER_TEAM; i++) {
-		pos[i] = positions[i];
+		pos[i] = i < positions.size() ? int(positions[i]) : int(cf::PROSPECT);   // 모자라면 신입생
 		for (int k = 0; k < 4; k++)
 			b[i][k] = i * 4 + k < bonus.size() ? int(bonus[i * 4 + k]) : 0;
 	}
-	ck::set_lineup(state, team, pos, b);
+	ck::set_lineup(state, team, pos, b, gk);
 }
 
 static Array to_events(const std::vector<ck::Event> &ev) {
@@ -126,8 +122,6 @@ Dictionary CardNative::get_state() const {
 	d["team_n"] = s.team_n;
 	d["turn_team"] = s.turn_team;
 	d["ball_owner"] = s.ball_owner;
-	d["ball_pos"] = Vector2i(s.ball_pos.x, s.ball_pos.y);
-	d["loose_team"] = s.loose_team;
 	d["pts"] = s.pts;
 	d["turn_count"] = s.turn_count;
 	d["half_turn"] = s.half_turn();
@@ -158,7 +152,9 @@ Dictionary CardNative::get_state() const {
 		gkick.push_back(s.gk_kick[t]);
 		grange.push_back(s.gk_range[t]);
 	}
-	d["ghp_max"] = gmax;   // 골키퍼 디펜스 = 체력 최대 [홈, 원정] (11-24 팀마다)
+	d["ghp_max"] = gmax;
+	d["gk"] = Array::make(s.gk[0], s.gk[1]);   // 골키퍼 uid [홈, 원정] (11-24 셋째 — 판 위 선수)
+	d["gk_in"] = Array::make(s.gk_in(0), s.gk_in(1));   // 골키퍼가 골대 안 (밖이면 골대 체력 0)   // 골키퍼 디펜스 = 체력 최대 [홈, 원정] (11-24 팀마다)
 	d["gk_kick"] = gkick;
 	d["gk_range"] = grange;
 	d["keeper"] = s.keeper;   // 슛을 막은 키퍼가 공을 쥔 팀 (−1 = 없음) — 화면의 키퍼 롱킥 차례 표시 (11-23)
@@ -357,7 +353,7 @@ PackedInt32Array CardNative::ai_pick(int sims, int seed, int exclude_uid) const 
 		return out;
 	if (state.phase == cf::PLACEMENT && !state.redeploy && r.action.t == ck::A_PLACE)
 		r.action = draft_vary(state, r, (unsigned long long)seed);
-	if (exclude_uid >= 0 && r.action.uid == exclude_uid) {   // 그 선수가 두는 수 × (스루패스로 뛰어가 받게 하는 건 됨 — 11-22 사용자)
+	if (exclude_uid >= 0 && r.action.uid == exclude_uid) {   // 그 선수가 두는 수 ×
 		int best = -1;
 		for (size_t i = 0; i < r.acts.size() && i < r.policy.size(); i++)
 			if (r.acts[i].uid != exclude_uid && (best < 0 || r.policy[i] > r.policy[size_t(best)]))
@@ -418,10 +414,8 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 	s.phase = cf::PLAY;
 	s.turn_team = turn_team;
 	s.pts = cf::POINTS_PER_TURN;
+	(void)x, (void)y;   // 옛 루즈볼 칸 자리 (11-24 셋째 스루패스 없앰 — 루즈볼 없음)
 	s.ball_owner = owner;
-	s.ball_pos = owner >= 0 ? cf::UNPLACED : cf::V2{ x, y };
-	s.loose_team = owner >= 0 ? -1 : turn_team;
-	s.loose_by = -1;
 	const int bt = s.ball_team();
 	for (int t = 0; t < 2; t++)
 		s.role[t] = t == bt ? ck::R_ATK : ck::R_DEF;
@@ -429,15 +423,11 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 }
 
 
-void CardNative::set_keeper(int team, int def, int kick, int range) {   // 골키퍼 스탯 (커리어 성장 — 경기 시작 전에)
-	ck::set_keeper(state, team, def, kick, range);
-}
-
-PackedInt32Array CardNative::keeper_stats(int position, PackedInt32Array bonus, int kick_range_up) {   // 그 선수가 키퍼일 때 [디펜스, 킥, 범위] (11-24 둘째 — set_keeper 에 그대로)
+PackedInt32Array CardNative::keeper_stats(int position, PackedInt32Array bonus) {   // 그 선수가 키퍼일 때 [디펜스, 롱킥 힘, 롱킥 범위]
 	int b[4] = {}, out[3];
 	for (int k = 0; k < 4 && k < bonus.size(); k++)
 		b[k] = bonus[k];
-	ck::keeper_stats(position, b, kick_range_up, out);
+	ck::keeper_stats(position, b, out);
 	PackedInt32Array r;
 	for (int v : out)
 		r.push_back(v);
