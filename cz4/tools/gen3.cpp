@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
 		std::vector<State> hist;
 		int guard = 0, ply = 0;
 		const uint32_t gid = uint32_t(seed * 100003ull + g);
-		while (s.phase != GAME_OVER && guard++ < 8000) {
+		while (s.phase != GAME_OVER && guard++ < 8000 && s.half_turn() < 2 * g_half_turns) {
 			const bool full = rng.unit() < full_frac;
 			const int sims = full ? full_sims : fast_sims;
 			const bool mine = !vs_league || s.turn_team == learner;
