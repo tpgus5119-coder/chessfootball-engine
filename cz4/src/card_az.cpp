@@ -62,8 +62,6 @@ void net_input(const State &s, int team, NetInput &in) {
 				add(in, OFF_PSTAT + (rel * 4 + k) * NF, f);
 		if (s.gk[q.team] == q.uid)
 			add(in, OFF_GK + rel * NF, f);   // 골대 안이면 f < 0 — 입력 없음 (d[22]·d[23])
-		if (q.hold_up > 0)
-			add(in, OFF_HOLDUP + rel * NF, f);
 		if (q.charge && rel == 0)   // 「강하게」는 두는 팀 차례 안에서만 — 상대 칸은 늘 0 이라 없다
 			add(in, OFF_CHARGE, f);
 	}
@@ -706,7 +704,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	constexpr int JOBS_N = 11;
 	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, TARGETMAN, STRIKER, PLAYMAKER };
 	constexpr int SQ = PER_TEAM;
-	int pos[SQ], bonus[SQ][4] = {}, hold_up[SQ] = {};
+	int pos[SQ], bonus[SQ][4] = {};
 	int used = 0;
 	const int prospects = int(next() % (SQ + 1));          // 유망주 0~5명
 	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 카드 0 ~ 2·level+1 장
@@ -726,7 +724,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			used |= 1 << k;
 			pos[i] = POOL[k];
 		}
-		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 특수(월 지속 · 타겟맨 버티기)
+		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스
 		if (pos[i] != PROSPECT && (level > 0 || i == ace)) {   // 성장은 전직한 선수만 (카드 1장 = +1 · 스탯마다 한 번)
 			const int n = i == ace ? 8 + int(next() % 6) : int(next() % (2 * level + 2));
 			for (int c = 0; c < n; c++) {
@@ -739,7 +737,6 @@ void random_lineup(State &s, int team, unsigned long long r) {
 				st[ok[next() % m]]++;
 			}
 		}
-		hold_up[i] = st[4];
 		bonus[i][ST_SHOT] = st[0];
 		bonus[i][ST_PASS] = st[1];
 		bonus[i][ST_DRIBBLE] = st[2];
@@ -747,7 +744,6 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	}
 	const int gk = next() % 2 ? default_gk(pos, bonus) : int(next() % SQ);
 	set_lineup(s, team, pos, bonus, gk);
-	set_perks(s, team, hold_up);
 }
 
 // 길 고르기용 상태 가치 (card.h value_path — 길은 간 뒤의 상태로): team 에 좋을수록 큼 (−1 ~ 1). ctx = const Net *

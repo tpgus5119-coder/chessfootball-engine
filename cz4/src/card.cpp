@@ -28,9 +28,9 @@ static void emit(const Event &e) {
 }
 
 // ---------- 전직 혜택 (모두 상시 · 11-24 규칙 묶음 4) ----------
-// 캐논 슛 거리 감쇠 없음 + 슛 범위 +1 · 스트라이커 슛 힘 = 수치 + 4 − 2×거리 + 슛 힘 +1 · 마에스트로 패스 거리 감쇠 없음 + 패스 범위 +1 ·
-// 플레이메이커 패스 관통(존을 이겨도 힘 안 깎임) + 패스 힘 +1 · 스프린터 무브 거리 감쇠 없음 + 무브 범위 +1 · 트릭스터 드리블 관통 + 무브 힘 +1 ·
-// 타겟맨 버티기가 거리로 안 약해짐 · 헌터 디펜스 +1 · 월 태세 지속 +1 · 마커 붙은 적 범위 −1 · 타이탄 밀기
+// 캐논 슛 거리 감쇠 없음 + 슛 범위 +1 · 피니셔 슛 힘 = 수치 + 4 − 2×거리 + 슛 힘 +1 · 마에스트로 패스 거리 감쇠 없음 + 패스 범위 +1 ·
+// 매지션 패스 관통(존을 이겨도 힘 안 깎임) + 패스 힘 +1 · 스프린터 무브 거리 감쇠 없음 + 무브 범위 +1 · 트릭스터 드리블 관통 + 무브 힘 +1 ·
+// 타워 버티기가 거리로 안 약해짐 · 헌터 디펜스 +1 · 월 상시 태세(공을 쥔 동안만 없음 — wall_sync) · 마커 붙은 적 범위 −1 · 타이탄 밀기
 // 성장(스탯마다 +1 한 번) = 그 스탯 힘 +1 (범위는 안 늘림 — 사용자 11-24 넷째 정정) · 예외 = 멀리형 자기 분야: 캐논 슛·마에스트로 패스·스프린터 무브 = 범위만 +1
 static int field_of(int pos) {   // 그 직업의 분야 스탯 (−1 = 없음)
 	switch (pos) {
@@ -77,8 +77,8 @@ static const Player *player_at(const State &s, V2 t) {
 
 int move_stat(const Player &p) { return std::max(1, BASE_MOVE + grow_pow(p, ST_DRIBBLE) + (p.position == TRICKSTER)); }
 
-// 공을 잡은 선수의 버티는 힘: 보통 = v (그 행동의 남은 힘) · 타겟맨 = flat(거리 감쇠 없는 힘에서 존에 깎인 만큼만 뺀 값) + 버티기 성장
-static int catch_hold(const Player &p, int v, int flat) { return p.position == TARGETMAN ? std::max(1, flat) + p.hold_up : v; }
+// 공을 잡은 선수의 버티는 힘: 보통 = v (그 행동의 남은 힘) · 타워 = flat(거리 감쇠 없는 힘에서 존에 깎인 만큼만 뺀 값)
+static int catch_hold(const Player &p, int v, int flat) { return p.position == TARGETMAN ? std::max(1, flat) : v; }
 
 static void set_owner(State &s, int uid) {
 	for (Player &q : s.players)
@@ -131,7 +131,7 @@ bool marked(const State &s, const Player &p) {   // 상대 마커에 상하좌�
 // ---------- 선수 수치 ----------
 
 // 판정 힘 — 늘 1 이상. 킥·드리블: 힘 = 수치 + 1 − 거리 (거리 0 = 공을 잡고 선 힘 = 수치) ·
-// 거리 감쇠 없음(캐논 슛·마에스트로 패스·스프린터 드리블) = 늘 수치 · 스트라이커 슛 = 수치 + 4 − 2×거리
+// 거리 감쇠 없음(캐논 슛·마에스트로 패스·스프린터 드리블) = 늘 수치 · 피니셔 슛 = 수치 + 4 − 2×거리
 int act_power(const State &s, const Player &p, int use, int dist) {
 	(void)s;
 	const bool kick = use == U_PASS || use == U_SHOT;
@@ -158,9 +158,7 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 }
 
 bool grow_ok(int pos, const int st[GROW_K], int k) {
-	if (k < 0 || k >= GROW_K || pos == PROSPECT || st[k] >= GROW_MAX)
-		return false;
-	return k != 4 || pos == WALL || pos == TARGETMAN;   // 특수 성장 = 월 지속 +1 · 타겟맨 버티기 +1 (나머지 직업은 스탯 성장 넷뿐)
+	return k >= 0 && k < GROW_K && pos != PROSPECT && st[k] < GROW_MAX;   // 모든 직업 = 스탯 넷 각 +1 한 번 (특수 성장 칸 없음 — 규칙 묶음 5)
 }
 
 // 범위 = 기본 + 성장(멀리형 자기 분야만 — grow_rng) + 전직 범위 +1(캐논 슛·마에스트로 패스·스프린터 무브) · 「강하게」 +1 · 마커 곁 −1
@@ -232,6 +230,23 @@ static bool place_tile_ok(const State &s, int team, V2 t) {
 	return is_own_half(team, t) && !player_at(s, t) && !is_goal(t) && !is_any_box(t);
 }
 
+// 월 = 상시 태세 (규칙 묶음 5): 공을 쥔 동안만 빼고 늘 제자리 사방 존 — 힘 = 디펜스(「강하게」 빼고). 경합에서 져도 이겨도·움직여도
+// 수 하나가 끝나면 다시 선다(그 수 안에서는 보통 태세처럼 풀린다 — 한 길에서 한 번만 겨룸). 골대 안 키퍼·박스 칸 ×
+static void wall_sync(State &s) {
+	if (s.phase != PLAY)
+		return;
+	for (Player &p : s.players) {
+		if (p.position != WALL || !p.placed())
+			continue;
+		const bool on = s.ball_owner != p.uid && !is_any_box(p.pos) && !in_goal(s, p);
+		const int ch = p.charge;
+		p.charge = 0;
+		p.stance = on ? act_power(s, p, U_STANCE) : 0;
+		p.stance_left = on;
+		p.charge = ch;
+	}
+}
+
 static void turn_start(State &s, int team) {   // 우리 차례 시작: 태세 지속 −1 (0 이면 풀림) · 포인트 2
 	for (Player &p : s.players) {
 		p.charge = 0, p.acted = 0;   // 「강하게」·행동 표시는 그 차례 안에서만
@@ -240,6 +255,7 @@ static void turn_start(State &s, int team) {   // 우리 차례 시작: 태세 �
 	}
 	s.pts = POINTS_PER_TURN;
 	s.tturn[team] += 1;
+	wall_sync(s);
 }
 
 static void commit_place(State &s, int uid, int position, V2 t) {
@@ -363,17 +379,11 @@ void set_lineup(State &s, int team, const int position[PER_TEAM], const int bonu
 		p.position = keeper || field++ < s.team_n ? position[i] : -1;   // 출전 인원 밖(후보)은 판에 안 선다
 		for (int k = 0; k < 4; k++)
 			p.bonus[k] = bonus[i][k];
-		p.hold_up = 0;
 		p.pos = UNPLACED;
 		p.placed_order = -1;
 	}
 	place_gk(s, team, team * PER_TEAM + gk);
 	s.redeploy = 1;   // 놓기만 — 포지션은 정해졌다
-}
-
-void set_perks(State &s, int team, const int hold_up[PER_TEAM]) {
-	for (int i = 0; i < PER_TEAM; i++)
-		s.players[team * PER_TEAM + i].hold_up = hold_up[i];
 }
 
 void set_trial(State &s, int team_n) {
@@ -404,8 +414,8 @@ static bool clock(State &s) {
 void end_turn(State &s) {
 	if (s.phase != PLAY)
 		return;
-	for (const Player &p : s.players)   // 월 대표 행동 — 우리 차례 둘을 이어 태세로 끝냄 (기록)
-		if (p.team == s.turn_team && p.stance > 0) {
+	for (const Player &p : s.players)   // 월 대표 행동 — 우리 차례 둘을 이어 태세로 끝냄 (기록 · 상시 태세인 월은 빼고)
+		if (p.team == s.turn_team && p.stance > 0 && p.position != WALL) {
 			if (s.st_turn[p.uid] > 0 && s.st_turn[p.uid] == s.tturn[p.team] - 1)
 				rep_add(s, p.uid, WALL);
 			s.st_turn[p.uid] = s.tturn[p.team];
@@ -569,7 +579,7 @@ struct Foe {
 	const int *zone;   // null = 경합 없음 (공 없는 이동)
 	int uid, val;
 	bool carry;   // 공을 든 선수가 뺏기는 칸에 선다 (드리블) — 사이 아군에서 자신은 뺀다
-	bool thru = false;   // 관통 — 존을 이겨도 힘이 안 깎임 (트릭스터 드리블 · 플레이메이커 패스)
+	bool thru = false;   // 관통 — 존을 이겨도 힘이 안 깎임 (트릭스터 드리블 · 매지션 패스)
 };
 
 // 엔진 기본 길의 순서 (망이 있으면 화면·AI 는 간 뒤의 상태로 고른다: value_path). 작을수록 좋다:
@@ -607,7 +617,7 @@ static PathKey path_key(const Foe *f, const std::vector<V2> &p) {
 			break;
 		}
 		if (!f->thru)
-			cur -= s.players[du].stance;   // 이긴 만큼 남음 · 관통(트릭스터 드리블·플레이메이커 패스)은 안 깎임
+			cur -= s.players[du].stance;   // 이긴 만큼 남음 · 관통(트릭스터 드리블·매지션 패스)은 안 깎임
 	}
 	k.left = k.lose ? 0 : -cur;
 	return k;
@@ -863,7 +873,7 @@ static bool do_dribble(State &s, int uid, V2 dest) {
 	int pow = act_power(s, p, U_DRIBBLE, manhattan(p.pos, dest));   // 드리블 힘 = 가는 거리에 반비례
 	const Foe f{ &s, zone, uid, pow, true, pierce(p, true) };
 	std::vector<V2> path = route(p.pos, dest, act_range(s, p, C_MOVE), &f, blocked, UNSET);
-	const int flat = act_power(s, p, U_DRIBBLE);   // 타겟맨 버티기 = 거리 감쇠 없는 무브 수치
+	const int flat = act_power(s, p, U_DRIBBLE);   // 타워 버티기 = 거리 감쇠 없는 무브 수치
 	if (path.empty())
 		return false;
 	const int team = p.team;
@@ -918,7 +928,7 @@ static bool send_ball(State &s, const Player &p, int &val, const std::vector<V2>
 			return true;
 		}
 		if (!(pass && pierce(p, false)))
-			val -= s.players[du].stance;   // 이긴 만큼 남음 · 플레이메이커 패스는 안 깎임
+			val -= s.players[du].stance;   // 이긴 만큼 남음 · 매지션 패스는 안 깎임
 		s.players[du].stance = 0;
 		s.players[du].stance_left = 0;
 	}
@@ -954,14 +964,14 @@ static bool do_pass(State &s, int uid, V2 dest) {
 	const int team = p.team;
 	const V2 from = p.pos;
 	const int ru = player_at(s, dest)->uid;
-	const int flat = act_power(s, p, U_PASS, 1), pow0 = pow;   // 타겟맨 버티기 = 패스한 선수의 패스 수치 그대로
+	const int flat = act_power(s, p, U_PASS, 1), pow0 = pow;   // 타워 버티기 = 패스한 선수의 패스 수치 그대로
 	emit({ 4, uid, -1, dest, pow, aerial ? 1 : 0, 0, path });
 	if (s.ball_owner == -1)
 		set_owner(s, uid);
 	pay_point(s);
 	if (!send_ball(s, p, pow, path, true)) {
 		set_owner(s, ru);
-		s.hold = catch_hold(s.players[ru], pow, flat - (pow0 - pow));   // 받은 선수 버티는 힘 = 그 패스의 남은 힘 · 타겟맨 = 존에 깎인 만큼만
+		s.hold = catch_hold(s.players[ru], pow, flat - (pow0 - pow));   // 받은 선수 버티는 힘 = 그 패스의 남은 힘 · 타워 = 존에 깎인 만큼만
 	}
 	if (s.ball_team() == team && (dest.x - from.x) * forward_dir(team) > 0)
 		rep_add(s, uid, MAESTRO);
@@ -1033,7 +1043,7 @@ static bool do_shot(State &s, int uid) {
 }
 
 // 키퍼 롱킥: 키퍼가 쥔 공을 킥 범위(골대 두 칸 중 가까운 칸에서 — goal_dist) 안 아군 발밑으로 (공중볼 · 경합 없음 · 포인트 1).
-// 받은 선수 버티는 힘 = 키퍼 킥 + 1 − 거리 (타겟맨 = 키퍼 킥).
+// 받은 선수 버티는 힘 = 키퍼 킥 + 1 − 거리 (타워 = 키퍼 킥).
 // 찰 곳이 없으면 이동만 열린다(아군이 내려와 받음) — 찰 곳이 생기면 다음 수는 롱킥뿐 (enumerate_actions)
 static bool keep_ok(const State &s, const Player &q) {
 	const int team = s.keeper;
@@ -1058,7 +1068,7 @@ static bool do_keep(State &s, int uid, V2 dest) {
 }
 
 static bool can_stance(const State &s, const Player &p) {
-	return can_act(s, p) && s.ball_owner != p.uid && !kickoff_turn(s) && p.stance == 0 && !is_any_box(p.pos);   // 이미 태세면 다시 걸 것 없음
+	return can_act(s, p) && s.ball_owner != p.uid && !kickoff_turn(s) && p.stance == 0 && p.position != WALL && !is_any_box(p.pos);   // 이미 태세면 다시 걸 것 없음 · 월은 상시 태세라 태세 수 없음
 }
 
 // 「강하게」 = 포인트 2개로 그 선수 다음 행동 힘·범위 +1: 엔진에서는 「힘 모으기(1포인트, 행동으로 안 셈) → 바로 이어지는 그 선수의 행동(1포인트)」 두 수.
@@ -1088,7 +1098,7 @@ static bool do_stance(State &s, int uid, V2 dest) {
 	pay_point(s);
 	Player &pm = s.players[uid];
 	pm.stance = pw;
-	pm.stance_left = 1 + (pm.position == WALL ? 1 + pm.hold_up : 0);   // 1턴 지속 · 월 +1 · 월 성장 +1
+	pm.stance_left = 1;   // 1턴 지속
 	if (tackle_ready(s, pm))   // 곁에 상대 공 임자가 있으면 바로 태클
 		tackle_do(s, uid, pm.stance);
 	after_action(s, team);
@@ -1133,6 +1143,7 @@ bool apply_action(State &s, const Action &a) {
 		return false;
 	if (!strong && u && a.t != A_PLACE && s.players[a.uid].team == team && s.turn_team == team)
 		s.players[a.uid].acted = 1;
+	wall_sync(s);
 	return true;
 }
 

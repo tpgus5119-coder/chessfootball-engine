@@ -36,11 +36,10 @@ struct Player {
 	int uid = -1;
 	int team = HOME;
 	int stance = 0;        // 수비 태세의 힘 — 0 = 태세 없음
-	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 · 월 2 · 월 성장 3)
+	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 — 월은 상시 태세라 셈하지 않음 · wall_sync)
 	int acted = 0;         // 이번 차례에 행동함 (망 입력) — 「강하게」 모으기는 안 셈
 	int charge = 0;        // 「강하게」: 2 = 이번 차례 다음 행동 1번이 힘·범위 +1 — 쓰거나 공을 잃거나 차례가 끝나면 0
 	int bonus[4] = { 0, 0, 0, 0 };   // 성장 — 슛·패스·무브·디펜스 (StatKind)
-	int hold_up = 0;       // 특수 성장: 월 지속 +1 · 타겟맨 버티기 +1
 	bool placed() const { return placed_order >= 0; }
 };
 
@@ -119,9 +118,8 @@ void new_match(State &s, int first);
 constexpr int SLOT_PROSPECT = CARD_POOL_N;
 // 선수단 5명 (gk = 골키퍼 칸 0~4 · −1 = 디펜스가 가장 높은 선수 — 같으면 뒤 선수, core/career.gd keeper_auto 와 같다). 골키퍼는 골대 칸에 놓인다
 void set_lineup(State &s, int team, const int position[PER_TEAM], const int bonus[PER_TEAM][4], int gk = -1);
-void set_perks(State &s, int team, const int hold_up[PER_TEAM]);
-// 성장: 스탯마다 +1 한 번 (부르는 쪽이 카드를 센다). k = 슛 · 패스 · 무브 · 디펜스 · 특수(월 지속 · 타겟맨 버티기) — core/career.gd grow_ok 와 같다
-constexpr int GROW_MAX = 1, GROW_K = 5;
+// 성장: 스탯마다 +1 한 번 (부르는 쪽이 카드를 센다). k = 슛 · 패스 · 무브 · 디펜스 — 특수 성장 칸 없음 (규칙 묶음 5) · core/career.gd grow_ok 와 같다
+constexpr int GROW_MAX = 1, GROW_K = 4;
 bool grow_ok(int pos, const int st[GROW_K], int k);
 enum StatKind { ST_SHOT = 0, ST_PASS = 1, ST_DRIBBLE = 2, ST_DEF = 3 };
 // 그 선수가 키퍼일 때 값: out = [디펜스(= 골대 체력) · 롱킥 힘(패스 1칸 힘) · 롱킥 범위(패스 범위)] — 성장·전직 혜택 포함

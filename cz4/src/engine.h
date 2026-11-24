@@ -28,7 +28,7 @@ constexpr V2 DIRS[4] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }; // board.gd
 
 enum Team { HOME = 0, AWAY = 1 };
 enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2 };
-// 직업 번호는 player_state.gd Pos 와 같다. 빈 번호(7·13·14)는 옛 직업 자리 — 번호를 당기지 않는다 · 9 스트라이커 · 11 플레이메이커 (11-24 규칙 묶음 4)
+// 직업 번호는 player_state.gd Pos 와 같다. 빈 번호(7·13·14)는 옛 직업 자리 — 번호를 당기지 않는다 · 9 피니셔 · 11 매지션 (11-24 규칙 묶음 4)
 enum Pos { PROSPECT = 0, CANNON = 1, TARGETMAN = 2, TRICKSTER = 3, TITAN = 4, MARKER = 5,
 	HUNTER = 6, WALL = 8, STRIKER = 9, SPRINTER = 10, PLAYMAKER = 11, MAESTRO = 12 };
 

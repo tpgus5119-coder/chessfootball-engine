@@ -10,7 +10,7 @@ namespace cf {
 namespace card {
 namespace az {
 
-// ---------- 입력 (평가하는 팀이 늘 +x로 공격하게 뒤집는다) — 판 7 = 직업 11 (옛 판 6 망은 tools/cz/net_jobs11.py 로 옮긴다) ----------
+// ---------- 입력 (평가하는 팀이 늘 +x로 공격하게 뒤집는다) — 판 8 = 특수 성장 칸 없앰 (옛 판 7 망은 tools/cz/net_perks0.py 로 옮긴다) ----------
 // 칸 번호: 선수·공·존이 놓이는 입력과 수는 박스(골대 포함) 밖 NF = 80칸만 쓴다 (field_tile) · 배치는 자기 진영 박스 밖 NPL = 40칸 (place_tile)
 // 골대 안 키퍼는 칸 입력이 없다 — 숫자 입력 d[22]·d[23](골대 안)과 키퍼 표시(OFF_GK, 골대 밖일 때 그 칸)로 본다
 constexpr int NPOS = POOL_N + 1;                       // 직업 11 + 신입생 칸
@@ -22,14 +22,13 @@ constexpr int OFF_BALL = OFF_STANCE + 2 * 3 * NF;      // 공 임자: rel·NF + 
 constexpr int OFF_UNPLACED = OFF_BALL + 2 * NF;        // 안 놓인 선수: rel·NPOS + slot
 constexpr int OFF_BENCH = OFF_UNPLACED + 2 * NPOS;     // 드래프트에 남은 직업: rel·POOL_N + slot
 constexpr int OFF_MARKED = OFF_BENCH + 2 * POOL_N;     // 마커에게 붙은 선수
-constexpr int OFF_HOLDUP = OFF_MARKED + 2 * NF;        // 지속·버티기 성장(hold_up) 선수
-constexpr int OFF_PSTAT = OFF_HOLDUP + 2 * NF;         // 성장: (rel·4 + 스탯)·NF + 칸 (스탯마다 +1 한 번)
+constexpr int OFF_PSTAT = OFF_MARKED + 2 * NF;         // 성장: (rel·4 + 스탯)·NF + 칸 (스탯마다 +1 한 번)
 constexpr int OFF_CHARGE = OFF_PSTAT + 2 * 4 * NF;     // 「강하게」 모은 선수 (두는 팀만 — 모으기는 그 차례 안에서만)
 constexpr int OFF_ZONE = OFF_CHARGE + NF;              // 태세 존 칸: rel·NF + 칸
 constexpr int OFF_ACTED = OFF_ZONE + 2 * NF;           // 이번 차례에 행동한 두는 팀 선수: me·NF + 칸
 constexpr int OFF_GK = OFF_ACTED + PER_TEAM * NF;      // 골대 밖에 나온 골키퍼: rel·NF + 칸
 constexpr int SPARSE = OFF_GK + 2 * NF;
-static_assert(NF == 80 && NPL == 40 && SPARSE == 4366, "입력 칸 수 (판 7) — tools/az/train.py CF_MODE=card · tools/cz/net_jobs11.py 와 같게");
+static_assert(NF == 80 && NPL == 40 && SPARSE == 4206, "입력 칸 수 (판 8) — tools/az/train.py CF_MODE=card · tools/cz/net_perks0.py 와 같게");
 constexpr int DENSE = 26;   // 숫자 입력 (card_az.cpp net_input d[0]~d[25])
 constexpr int MAX_ACTIVE = 96;
 
@@ -40,7 +39,7 @@ struct NetInput {
 };
 void net_input(const State &s, int team, NetInput &in);
 
-// ---------- 수 번호 (판 7) ----------
+// ---------- 수 번호 (판 7 그대로) ----------
 constexpr int OFF_TILE = 0;                                   // 이동·드리블·패스: (종류·PER_TEAM + me)·NF + 칸
 constexpr int OFF_SHOT = OFF_TILE + 3 * PER_TEAM * NF;        // 슛: me
 constexpr int OFF_STANCE_A = OFF_SHOT + PER_TEAM;             // 제자리 사방 태세: me

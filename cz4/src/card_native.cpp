@@ -27,7 +27,6 @@ void CardNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("new_match", "first"), &CardNative::new_match);
 	ClassDB::bind_method(D_METHOD("set_knockout", "on"), &CardNative::set_knockout);
 	ClassDB::bind_method(D_METHOD("set_lineup", "team", "positions", "bonus", "gk"), &CardNative::set_lineup, DEFVAL(-1));
-	ClassDB::bind_method(D_METHOD("set_perks", "team", "hold_up"), &CardNative::set_perks);
 	ClassDB::bind_method(D_METHOD("set_trial", "team_n"), &CardNative::set_trial);
 	ClassDB::bind_method(D_METHOD("get_state"), &CardNative::get_state);
 	ClassDB::bind_method(D_METHOD("actions"), &CardNative::actions);
@@ -61,15 +60,6 @@ void CardNative::new_match(int first) {
 
 void CardNative::set_knockout(bool on) {
 	state.knockout = on ? 1 : 0;
-}
-
-void CardNative::set_perks(int team, PackedInt32Array hold_up) {
-	if (team < 0 || team > 1)
-		return;
-	int h[cf::PER_TEAM] = {};
-	for (int i = 0; i < cf::PER_TEAM; i++)
-		h[i] = i < hold_up.size() ? int(hold_up[i]) : 0;
-	ck::set_perks(state, team, h);
 }
 
 // 시험판 (혼자하기): 팀 필드 인원 — new_match 바로 뒤
