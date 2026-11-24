@@ -43,13 +43,12 @@ void net_input(const State &s, int team, NetInput &in);
 // ---------- 수 번호 (판 5) ----------
 constexpr int OFF_TILE = 0;                                   // 이동·드리블·패스: (종류·PER_TEAM + me)·NF + 칸
 constexpr int OFF_SHOT = OFF_TILE + 3 * PER_TEAM * NF;        // 슛: me
-constexpr int OFF_STANCE_A = OFF_SHOT + PER_TEAM;             // 제자리 태세(월 사방): me
+constexpr int OFF_STANCE_A = OFF_SHOT + PER_TEAM;             // 제자리 사방 태세: me (11-24 — 옛 방향 태세 칸은 여기로 합침)
 constexpr int OFF_PLACE = OFF_STANCE_A + PER_TEAM;            // 배치: slot·NPL + 자기 진영 칸
 constexpr int OFF_SAVE = OFF_PLACE + (POOL_N + 1) * NPL;      // 공 없는 선수 「강하게」 모으기: 자기 칸
 constexpr int OFF_KEEP = OFF_SAVE + NF;                       // 키퍼 롱킥: 받는 me·NF + 칸 (11-24 빈 칸 롱킥 없앰)
-constexpr int OFF_STANCE_DIR = OFF_KEEP + PER_TEAM * NF;   // 방향 태세: me·4 + 방향 (평가 팀 기준 — 원정은 ±x 를 바꾼다) DIRS 순서 +x·−x·+y·−y
-constexpr int NA = OFF_STANCE_DIR + PER_TEAM * 4;
-static_assert(NA == 1600, "수 칸 수 (판 5b, 11-24 빈 칸 롱킥 없앰) — tools/az/train.py CF_MODE=card · tools/cz/net_keep_drop.py 와 같게");
+constexpr int NA = OFF_KEEP + PER_TEAM * NF;
+static_assert(NA == 1584, "수 칸 수 (판 5c, 11-24 빈 칸 롱킥·방향 태세 없앰) — tools/az/train.py CF_MODE=card · tools/cz/net_keep_drop.py 와 같게");
 int action_index(const State &s, const Action &a);
 
 // ---------- 망 (본편과 같은 몸통, 머리표 MAGIC만 다르다) ----------

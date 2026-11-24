@@ -13,9 +13,6 @@ inline void state(cf::card::State &s) {
 	for (int i = 0; i < cf::PLAYERS; i++) {
 		s.half_pos[i] = v(s.half_pos[i]);
 		s.players[i].pos = v(s.players[i].pos);
-		int &zd = s.players[i].zdir;   // 존 방향 (11-21) — DIRS 2(+y)·3(−y) 가 바뀐다 · ±x 와 사방은 그대로
-		if (zd == 2 || zd == 3)
-			zd ^= 1;
 	}
 }
 inline cf::card::Action act(cf::card::Action a) {   // 받을 동료(mate)는 그대로

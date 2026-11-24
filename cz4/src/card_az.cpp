@@ -135,18 +135,8 @@ int action_index(const State &s, const Action &a) {
 		}
 		case A_SHOT:
 			return mine ? OFF_SHOT + me : -1;
-		case A_STANCE: {   // 월(제자리 사방) = 제자리 칸 · 그 밖 = 방향 태세 칸 (공 임자 「강하게」 제자리 수는 stance_dir 이 −1 이라 번호 없음 — 판 4 때부터 그대로)
-			if (!mine)
-				return -1;
-			int dir = stance_dir(s.players[a.uid], a.dest);
-			if (dir < 0)
-				return -1;
-			if (dir == ZD_ALL)
-				return OFF_STANCE_A + me;
-			if (team == AWAY && dir < 2)
-				dir ^= 1;   // 원정은 x 를 뒤집어 본다 (flip_tile 과 같게)
-			return OFF_STANCE_DIR + me * 4 + dir;
-		}
+		case A_STANCE:   // 제자리 사방 태세 (11-24) · 공 임자 「강하게」 제자리 수는 번호 없음 (판 4 때부터 그대로)
+			return mine && s.ball_owner != a.uid && a.dest == s.players[a.uid].pos ? OFF_STANCE_A + me : -1;
 		case A_PLACE: {
 			if (a.uid < 0 || a.uid > POOL_N || !in_bounds(a.dest))
 				return -1;

@@ -31,7 +31,6 @@ constexpr int MOVE_RANGE = 3;      // 무브 범위 3 고정 — 무브 수치(�
 constexpr int KICK_RANGE = 4;     // 킥 범위 상한 (범위 보너스만큼 늘어남)
 
 extern int g_goal_hp;   // 측정용 CF_GOAL_HP — 0 이 아니면 두 팀 골키퍼 디펜스를 이 값으로 (규칙 = 팀마다 gk_def)
-extern int g_zone4;   // 0 = 곁 한 칸 방향 존 · 월만 사방 (규칙, 11-23) · 1 = 모든 선수 4방 존 (비교용)
 
 // A_SAVE = 공 없는 선수 「강하게」(11-22 — 옛 키퍼 킥 번호 자리, dest = 자기 칸) · 7 = 빈 번호(옛 차례 끝·전술) · 9 = 옛 뒷공간 패스 A_RUN (11-22 부터 스루패스가 대신 — 11-24 없앰)
 enum Act { A_MOVE = 0, A_DRIBBLE, A_PASS, A_SHOT, A_STANCE, A_PLACE, A_KEEP, A_FREE7, A_SAVE };   // A_KEEP(6) = 키퍼 롱킥 — uid = 받는 아군 · dest = 그 칸 (11-23 · 옛 빈 번호)
@@ -43,10 +42,9 @@ struct Player {
 	int uid = -1;
 	int team = HOME;
 	int stance = 0;        // 수비 태세의 힘 — 0 = 태세 없음
-	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 · 월은 2 — 11-21 사용자 「월 2턴 4방 존」)
+	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 · 월 2 · 월 성장 3 — 11-24)
 	int acted = 0;         // 이번 차례에 행동함 (11-22 사용자 「한 선수는 한 차례에 행동 하나」) — 우리 차례 시작에 0 · 「강하게」 모으기는 안 셈
 	int charge = 0;        // 「강하게」 (11-22 셋째 — 사용자 「2액포 = 힘 +1 · 패스·슛·드리블·디펜스, 이동은 없음」): 2 = 이번 차례 다음 패스·슛·드리블·디펜스 1번이 힘 +1 — 포인트 2개짜리 행동의 앞 반 · 쓰거나 공을 잃거나 차례가 끝나면 0
-	int zdir = -1;         // 존 방향 (11-21 사용자): DIRS 번호 0~3 = 곁 한 칸 · ZD_ALL = 사방 4칸(월). stance 0 이면 뜻 없음
 	int bonus[4] = { 0, 0, 0, 0 };   // 스탯업 — 슛·패스(= 킥)·드리블(= 이동)·수비
 	int range_up = 0;      // 이동 범위 +1 (옛 전성기 — 저장 호환)
 	int kick_range_up = 0; // 킥 범위 +1
@@ -109,10 +107,8 @@ struct Action {
 	int sk = 0;        // 늘 0 (11-19 직업 능력 상시 — 옛 「스킬을 켠 수」 자리)
 };
 
-// 수비 태세 존 (11-21 사용자 「곁 한 칸을 골라 존 1칸 · 방향 공개 · 월 = 사방 4칸 1차례」)
-constexpr int ZD_ALL = 4;
-int zone_tiles(const Player &p, V2 out[4]);   // 태세 선수의 존 칸 (판 안·골대 아님) — 태세 없으면 0
-int stance_dir(const Player &p, V2 dest);     // 태세 수의 칸 → 존 방향 (월은 제자리 = ZD_ALL), 안 되는 칸 −1
+// 수비 태세 존 (11-24 사용자 「모두 사방 4칸 · 1턴 지속」 — 태세 수 = 제자리)
+int zone_tiles(const Player &p, V2 out[4]);   // 태세 선수의 존 칸 (판 안·골대·박스 아님) — 태세 없으면 0
 
 enum Use { U_PASS, U_SHOT, U_MOVE, U_DRIBBLE, U_STANCE };
 // 선수 수치 (보정 모두 포함 — 판정 힘). want = C_KICK·C_MOVE·C_DEF, use = 쓰임, dist = 킥 거리 (킥만 — min(수치, 6 − 거리))

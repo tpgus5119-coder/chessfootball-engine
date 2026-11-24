@@ -181,7 +181,7 @@ Dictionary CardNative::get_state() const {
 			for (int k = 0; k < nz; k++)
 				za.push_back(Vector2i(z[k].x, z[k].y));
 			q["zone"] = za;
-			q["zone_dir"] = p.stance > 0 ? p.zdir : -1;
+			q["zone_dir"] = p.stance > 0 ? 4 : -1;   // 늘 사방 (11-24 — 옛 방향 존 자리, 화면 호환 · 4 = 사방)
 		}
 		q["skill_job"] = false;   // 직업 능력 상시 (11-19) — 켜는 단추 없음
 		q["skill_can"] = ck::skill_can(s, p);
@@ -410,7 +410,6 @@ void CardNative::dev_set(int uid, int x, int y, int stance) {
 	s.players[uid].stance_left = stance > 0 ? 1 : 0;
 	s.players[uid].acted = 0;   // 앞 국면의 「행동함」(11-22 한 선수 행동 하나)·「강하게」도
 	s.players[uid].charge = 0;
-	s.players[uid].zdir = ck::ZD_ALL;   // 개발용 — 사방 존
 }
 
 void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
