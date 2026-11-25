@@ -702,8 +702,8 @@ void random_lineup(State &s, int team, unsigned long long r) {
 		return r * 0x2545F4914F6CDD1Dull;
 	};
 	// 커리어와 같은 꼴: 직업 11 · 성장은 카드 셈 · 선수단 5명 중 골키퍼 1명 (절반은 디펜스가 가장 높은 선수 = 커리어 기본값·상대 학교, 절반은 아무나)
-	constexpr int JOBS_N = 12;
-	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, TARGETMAN, STRIKER, PLAYMAKER, ENGINE };
+	constexpr int JOBS_N = 11;
+	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER, ENGINE };
 	constexpr int SQ = PER_TEAM;
 	int pos[SQ], bonus[SQ][GROW_K] = {};
 	int used = 0;

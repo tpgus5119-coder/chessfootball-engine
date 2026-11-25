@@ -10,7 +10,7 @@ constexpr int W = 12, H = 8, NT = W * H;          // board.gd — 진영 x 0~5 /
 constexpr int GOAL_Y0 = H / 2 - 1, GOAL_N = 2;    // 골대 = 끝줄 가운데 두 칸 (y 3·4)
 constexpr int PER_TEAM = 5, PLAYERS = 2 * PER_TEAM;   // 팀 = 필드 4 + 골키퍼 1 — uid 홈 0~4 · 원정 5~9 · game_state.gd PLAYERS_PER_TEAM
 constexpr int FIELD_N = PER_TEAM - 1;               // 배치하는 필드 선수 수 (골키퍼는 골대에서 시작 — 놓지 않음)
-constexpr int POOL_N = 12;                  // 드래프트 풀 직업 수 (card_az.h 슬롯) — 11-25 규칙 묶음 6 엔진 더해 12
+constexpr int POOL_N = 11;                  // 드래프트 풀 직업 수 (card_az.h 슬롯) — 11-26 타워 없앰 → 11
 constexpr int POINTS_PER_TURN = 2;   // 차례마다 포인트
 constexpr int LONG_PASS_MIN = 5;                   // 이 거리부터 공중볼 (ball_actions.gd)
 
@@ -29,7 +29,7 @@ constexpr V2 DIRS[4] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }; // board.gd
 enum Team { HOME = 0, AWAY = 1 };
 enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2 };
 // 직업 번호는 player_state.gd Pos 와 같다. 7 = 엔진(11-25 규칙 묶음 6) · 빈 번호(13·14)는 옛 직업 자리 — 번호를 당기지 않는다 · 9 포처 · 11 매지션 (11-24 규칙 묶음 4)
-enum Pos { PROSPECT = 0, CANNON = 1, TARGETMAN = 2, TRICKSTER = 3, TITAN = 4, MARKER = 5,
+enum Pos { PROSPECT = 0, CANNON = 1, TARGETMAN = 2 /* 11-26 없앤 직업 — 번호만 비워 둠 */, TRICKSTER = 3, TITAN = 4, MARKER = 5,
 	HUNTER = 6, ENGINE = 7, WALL = 8, STRIKER = 9, SPRINTER = 10, PLAYMAKER = 11, MAESTRO = 12 };
 
 inline bool in_bounds(V2 t) { return t.x >= 0 && t.x < W && t.y >= 0 && t.y < H; }

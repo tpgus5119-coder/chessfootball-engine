@@ -13,7 +13,7 @@ namespace card {
 std::vector<Event> *g_events = nullptr;
 const std::vector<V2> *g_path = nullptr;
 
-static const int DRAFT_POOL[CARD_POOL_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TARGETMAN, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER, ENGINE };   // 칸 번호 = 망 입력 자리 (엔진 = 맨 뒤 — 11-25)
+static const int DRAFT_POOL[CARD_POOL_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER, ENGINE };   // 칸 번호 = 망 입력 자리 (엔진 = 맨 뒤 — 11-25)
 
 int pool_slot(int position) {
 	for (int k = 0; k < CARD_POOL_N; k++)
@@ -34,7 +34,7 @@ static void emit(const Event &e) {
 // ---------- 전직 혜택 (모두 상시 · 11-24 규칙 묶음 4) ----------
 // 캐논 슛 거리 감쇠 없음 + 슛 범위 +1 · 포처 슛 관통(존을 이겨도 힘 안 깎임) + 슛 힘 +1 · 마에스트로 패스 거리 감쇠 없음 + 패스 범위 +1 ·
 // 매지션 패스 관통(존을 이겨도 힘 안 깎임) + 패스 힘 +1 · 스프린터 무브 거리 감쇠 없음 + 무브 범위 +1 · 트릭스터 드리블 관통 + 무브 힘 +1 ·
-// 타워 피지컬 +1 · 공을 쥐면 차례 시작마다 버티는 힘 +2(피지컬까지) · 엔진 체력 +1 · 경기 사이 회복 +2 · 헌터 디펜스 +1 · 월 상시 태세(공을 쥔 동안만 없음 — wall_sync) · 마커 피지컬 +1 · 붙은 적 범위 −1(피지컬이 클 때만) · 타이탄 피지컬 +1 · 밀기(피지컬이 클 때만)
+// 엔진 체력 +1 · 경기 사이 회복 +2 · 헌터 디펜스 +1 · 월 상시 태세(공을 쥔 동안만 없음 — wall_sync) · 마커 피지컬 +1 · 붙은 적 범위 −1(피지컬이 클 때만) · 타이탄 피지컬 +1 · 밀기(피지컬이 클 때만)
 // 성장(스탯마다 +1 한 번) = 그 스탯 힘 +1 (범위는 안 늘림 — 사용자 11-24 넷째 정정) · 예외 = 멀리형 자기 분야: 캐논 슛·마에스트로 패스·스프린터 무브 = 범위만 +1
 static int field_of(int pos) {   // 그 직업의 분야 스탯 (−1 = 없음)
 	switch (pos) {
@@ -82,7 +82,7 @@ static const Player *player_at(const State &s, V2 t) {
 int move_stat(const Player &p) { return std::max(1, BASE_MOVE + grow_pow(p, ST_DRIBBLE) + (p.position == TRICKSTER)); }
 
 // ---------- 피지컬 · 체력 (11-25 규칙 묶음 6) ----------
-int phys(const Player &p) { return BASE_PHYS + p.bonus[ST_PHYS] + (p.position == TARGETMAN || p.position == TITAN || p.position == MARKER); }
+int phys(const Player &p) { return BASE_PHYS + p.bonus[ST_PHYS] + (p.position == TITAN || p.position == MARKER); }
 int stam_max(const Player &p) { return BASE_STAM + p.bonus[ST_STAM] + (p.position == ENGINE); }
 int stam(const Player &p) { return std::max(0, stam_max(p) - p.fat); }
 int rest_gain(int position) { return position == ENGINE ? 2 : 1; }
@@ -287,8 +287,6 @@ static void turn_start(State &s, int team) {   // 우리 차례 시작: 태세 �
 		p.spent = 0;
 	s.pts = POINTS_PER_TURN;
 	s.tturn[team] += 1;
-	if (s.ball_owner >= 0 && s.players[s.ball_owner].team == team && s.players[s.ball_owner].position == TARGETMAN)   // 타워: 공을 쥔 채 우리 차례 시작 = 버티는 힘 +2 (피지컬까지)
-		s.hold = std::max(s.hold, std::min(phys(s.players[s.ball_owner]), s.hold + TOWER_REGEN));
 	wall_sync(s);
 }
 

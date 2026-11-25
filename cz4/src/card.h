@@ -16,7 +16,7 @@ constexpr int CARD_HALF_TURNS = 60;   // 한 판 = 두 팀 합 60차례 (팀당 
 constexpr int WIN_GOALS = 3;          // 먼저 3골이면 바로 끝
 enum CardType { C_KICK = 0, C_MOVE = 1, C_DEF = 2, C_SHOT = 3 };   // act_range 의 범위 종류 — C_KICK = 패스 · C_SHOT = 슛
 enum Role { R_ATK = 0, R_DEF = 1 };   // 공 가진 팀 = 공격
-constexpr int CARD_POOL_N = 12;       // 직업 12 (11-25 엔진)
+constexpr int CARD_POOL_N = 11;       // 직업 11 (11-26 타워 없앰)
 
 constexpr int BASE_KICK = 5, BASE_DEF = 3, BASE_MOVE = 4;   // 패스·슛 5 · 디펜스 3 · 무브(이동·드리블) 4
 constexpr int MOVE_RANGE = BASE_MOVE;
@@ -75,7 +75,7 @@ struct State {
 	unsigned char rep[PLAYERS][CARD_POOL_N] = {};   // 대표 행동 수 (기록 — 커리어 화면이 센다)
 	unsigned char knockout = 0;   // 1 = 단판 토너먼트 (비기면 연장 — 리그전은 0, 무승부 그대로)
 	unsigned char ot = 0;         // 1 = 연장 중 (정규 CARD_HALF_TURNS 뒤 · 차례 제한 없는 골든골)
-	unsigned char spare[2] = {};  // 채움 바이트 자리 (rep 10×12 + 2 → 4 배수 · 늘 0 — 11-25 직업 12)
+	// 채움 바이트 없음: rep 10×11 + 2 = 112 (4 배수 — 11-26 직업 11, 옛 spare[2] 뺌)
 	int tturn[2] = { 0, 0 };      // 팀마다 시작한 차례 수 (월 대표 행동 기록)
 	int st_turn[PLAYERS] = {};    // 그 선수가 태세로 끝낸 마지막 차례 (월 대표 행동 기록)
 	int team_n = FIELD_N;         // 팀당 필드 선수 (골키퍼 빼고)
@@ -98,7 +98,7 @@ int act_power(const State &s, const Player &p, int use, int dist = 0);   // 판�
 int act_range(const State &s, const Player &p, int want);                // 범위 — want = C_KICK(패스)·C_SHOT·C_MOVE
 int move_stat(const Player &p);   // 무브 수치 (거리 전)
 
-int phys(const Player &p);       // 피지컬 = 3 + 성장 + 타워·타이탄·마커 +1
+int phys(const Player &p);       // 피지컬 = 3 + 성장 + 타이탄·마커 +1
 int stam_max(const Player &p);   // 체력 최대 = 3 + 성장 + 엔진 +1
 int stam(const Player &p);       // 남은 체력
 int rest_gain(int position);     // 경기 사이 회복 = 1 (엔진 2) — 경기 안 「행동 안 한 차례 끝」 회복은 누구나 REST_TURN
@@ -106,7 +106,6 @@ int rest_gain(int position);     // 경기 사이 회복 = 1 (엔진 2) — 경�
 // false = 옛 규칙 그대로(체력은 줄지 않음 · 「강하게」 = 포인트 2). 켜려면 true 한 줄 (시험은 둘 다 맞게 나뉨)
 constexpr bool MATCH_STAMINA = true;
 constexpr int REST_TURN = 1;     // 경기 안: 그 차례에 체력을 안 쓴 선수 회복 (사용자 11-25 수정 — 엔진도 같음)
-constexpr int TOWER_REGEN = 2;   // 타워: 공을 쥔 채 우리 차례 시작 = 버티는 힘 + 이만큼 (피지컬까지)
 // 스크린 판정 방식 (사용자 고민 중 — 여기 한 줄만 바꾸면 된다): 0 옛 규칙(아군이 서 있기만) · 1 태세만 요구 · 2 태세 + 피지컬 > 그 칸 수비수 (지금)
 constexpr int SCREEN_MODE = 1;
 void set_stamina(State &s, int team, const int st[PER_TEAM]);   // 경기 시작 체력 (선수단 칸 순서 = uid 순서 · 0~최대로 자름)
