@@ -155,7 +155,7 @@ bool marked(const State &s, const Player &p) {   // 상대 마커에 상하좌�
 	if (!p.placed())
 		return false;
 	for (const Player &m : s.players)
-		if (m.team != p.team && m.position == MARKER && m.placed() && manhattan(m.pos, p.pos) == 1 && phys(m) > phys(p))
+		if (m.team != p.team && m.position == MARKER && m.placed() && s.ball_owner != m.uid && manhattan(m.pos, p.pos) == 1 && phys(m) > phys(p))   // 공을 쥔 마커는 못 잡는다 (11-25)
 			return true;
 	return false;
 }
@@ -788,8 +788,8 @@ static int origins(const State &s, const Player &p, V2 o[2]) {
 // 타이탄 착지 밀기 — 도착 칸 상하좌우의 적 모두를 1칸 바깥으로. 밀린 선수는 태세가 풀린다
 // 공 유무와 상관없이 · 타이탄 피지컬 > 그 적 피지컬일 때만 (동점 = 안 밀림 — 11-25). 밀 칸이 막히면(판 밖·사람·박스·골대 · 키퍼는 상대 진영) 그 적만 그대로
 static void titan_push(State &s, const Player &p) {
-	if (p.position != TITAN)
-		return;
+	if (p.position != TITAN || s.ball_owner == p.uid)
+		return;   // 공을 쥔 타이탄은 못 민다 (사용자 11-25)
 	for (const V2 &d : DIRS) {
 		const Player *q = player_at(s, p.pos + d);
 		if (!q || q->team == p.team || phys(p) <= phys(*q) || !stand_ok(s, *q, q->pos + d))
