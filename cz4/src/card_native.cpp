@@ -28,6 +28,9 @@ void CardNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_knockout", "on"), &CardNative::set_knockout);
 	ClassDB::bind_method(D_METHOD("set_lineup", "team", "positions", "bonus", "gk"), &CardNative::set_lineup, DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("set_trial", "team_n"), &CardNative::set_trial);
+	ClassDB::bind_method(D_METHOD("set_stamina", "team", "stam"), &CardNative::set_stamina);
+	ClassDB::bind_static_method("CardNative", D_METHOD("stat_info", "position", "bonus"), &CardNative::stat_info);
+	ClassDB::bind_method(D_METHOD("dev_stam", "uid", "stam"), &CardNative::dev_stam);
 	ClassDB::bind_method(D_METHOD("get_state"), &CardNative::get_state);
 	ClassDB::bind_method(D_METHOD("actions"), &CardNative::actions);
 	ClassDB::bind_method(D_METHOD("apply", "t", "uid", "dx", "dy", "sk", "path"), &CardNative::apply, DEFVAL(Array()));
@@ -68,13 +71,38 @@ void CardNative::set_trial(int team_n) { ck::set_trial(state, team_n); }
 void CardNative::set_lineup(int team, PackedInt32Array positions, PackedInt32Array bonus, int gk) {
 	if (team < 0 || team > 1 || positions.size() < 1)
 		return;
-	int pos[cf::PER_TEAM], b[cf::PER_TEAM][4] = {};
+	int pos[cf::PER_TEAM], b[cf::PER_TEAM][ck::GROW_K] = {};
+	const int w = bonus.size() > cf::PER_TEAM * 4 ? ck::GROW_K : 4;   // 한 선수 칸 수 — 6 (11-25) · 옛 4
 	for (int i = 0; i < cf::PER_TEAM; i++) {
 		pos[i] = i < positions.size() ? int(positions[i]) : int(cf::PROSPECT);   // 모자라면 신입생
-		for (int k = 0; k < 4; k++)
-			b[i][k] = i * 4 + k < bonus.size() ? int(bonus[i * 4 + k]) : 0;
+		for (int k = 0; k < w; k++)
+			b[i][k] = i * w + k < bonus.size() ? int(bonus[i * w + k]) : 0;
 	}
 	ck::set_lineup(state, team, pos, b, gk);
+}
+
+void CardNative::set_stamina(int team, PackedInt32Array stam) {
+	if (team < 0 || team > 1)
+		return;
+	int st[cf::PER_TEAM];
+	for (int i = 0; i < cf::PER_TEAM; i++)
+		st[i] = i < stam.size() ? int(stam[i]) : 99;   // 모자라면 가득
+	ck::set_stamina(state, team, st);
+}
+
+PackedInt32Array CardNative::stat_info(int position, PackedInt32Array bonus) {
+	ck::Player p;
+	p.position = position;
+	for (int k = 0; k < ck::GROW_K && k < bonus.size(); k++)
+		p.bonus[k] = bonus[k];
+	return PackedInt32Array({ ck::phys(p), ck::stam_max(p), ck::rest_gain(position) });
+}
+
+void CardNative::dev_stam(int uid, int stam) {
+	if (uid >= 0 && uid < cf::PLAYERS) {
+		ck::Player &p = state.players[uid];
+		p.fat = ck::stam_max(p) - std::max(0, std::min(ck::stam_max(p), stam));
+	}
 }
 
 static Array to_events(const std::vector<ck::Event> &ev) {
@@ -150,7 +178,10 @@ Dictionary CardNative::get_state() const {
 		q["team"] = p.team;
 		q["position"] = p.position;
 		q["charge"] = p.charge;   // 「강하게」 모음 2
-		q["bonus"] = Array::make(p.bonus[0], p.bonus[1], p.bonus[2], p.bonus[3]);   // 성장 슛·패스·무브·디펜스
+		q["bonus"] = Array::make(p.bonus[0], p.bonus[1], p.bonus[2], p.bonus[3], p.bonus[4], p.bonus[5]);   // 성장 슛·패스·무브·디펜스·피지컬·체력
+		q["phys"] = ck::phys(p);   // 피지컬 (11-25)
+		q["stam"] = ck::stam(p);   // 남은 체력
+		q["stam_max"] = ck::stam_max(p);
 		q["pos"] = Vector2i(p.pos.x, p.pos.y);
 		q["placed_order"] = p.placed_order;
 		q["stance"] = p.stance;
@@ -406,8 +437,8 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 
 
 PackedInt32Array CardNative::keeper_stats(int position, PackedInt32Array bonus) {   // 그 선수가 키퍼일 때 [디펜스, 롱킥 힘, 롱킥 범위]
-	int b[4] = {}, out[3];
-	for (int k = 0; k < 4 && k < bonus.size(); k++)
+	int b[ck::GROW_K] = {}, out[3];
+	for (int k = 0; k < ck::GROW_K && k < bonus.size(); k++)
 		b[k] = bonus[k];
 	ck::keeper_stats(position, b, out);
 	PackedInt32Array r;

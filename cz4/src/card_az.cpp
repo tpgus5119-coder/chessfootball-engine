@@ -57,9 +57,10 @@ void net_input(const State &s, int team, NetInput &in) {
 			add(in, OFF_BALL + rel * NF, f);
 		if (marked(s, q))
 			add(in, OFF_MARKED + rel * NF, f);
-		for (int k = 0; k < 4; k++)
+		for (int k = 0; k < GROW_K; k++)
 			if (q.bonus[k] > 0)
-				add(in, OFF_PSTAT + (rel * 4 + k) * NF, f);
+				add(in, OFF_PSTAT + (rel * GROW_K + k) * NF, f);
+		add(in, OFF_STAM + (rel * 4 + std::min(3, stam(q))) * NF, f);   // 남은 체력 0·1·2·3+ (골대 안 키퍼는 칸 없음)
 		if (s.gk[q.team] == q.uid)
 			add(in, OFF_GK + rel * NF, f);   // 골대 안이면 f < 0 — 입력 없음 (d[22]·d[23])
 		if (q.charge && rel == 0)   // 「강하게」는 두는 팀 차례 안에서만 — 상대 칸은 늘 0 이라 없다
@@ -135,8 +136,8 @@ int action_index(const State &s, const Action &a) {
 		}
 		case A_SHOT:
 			return mine ? OFF_SHOT + me : -1;
-		case A_STANCE:   // 제자리 사방 태세 · 공 임자 「강하게」 모으기 수는 번호 없음
-			return mine && s.ball_owner != a.uid && a.dest == s.players[a.uid].pos ? OFF_STANCE_A + me : -1;
+		case A_STANCE:   // 제자리 사방 태세 · 공 임자 = 버티기 (같은 칸 — 한 선수는 둘 중 하나만 · 11-25)
+			return mine && a.dest == s.players[a.uid].pos ? OFF_STANCE_A + me : -1;
 		case A_PLACE: {
 			if (a.uid < 0 || a.uid > POOL_N || !in_bounds(a.dest))
 				return -1;
@@ -149,7 +150,7 @@ int action_index(const State &s, const Action &a) {
 				return -1;
 			return OFF_KEEP + me * NF + f;
 		}
-		case A_SAVE: {   // 공 없는 선수 「강하게」 모으기 — 자기 칸
+		case A_SAVE: {   // 「강하게」 모으기 — 자기 칸 (누구나 · 11-25)
 			const int f = ftile(a.dest, team);
 			return f < 0 ? -1 : OFF_SAVE + f;
 		}
@@ -701,10 +702,10 @@ void random_lineup(State &s, int team, unsigned long long r) {
 		return r * 0x2545F4914F6CDD1Dull;
 	};
 	// 커리어와 같은 꼴: 직업 11 · 성장은 카드 셈 · 선수단 5명 중 골키퍼 1명 (절반은 디펜스가 가장 높은 선수 = 커리어 기본값·상대 학교, 절반은 아무나)
-	constexpr int JOBS_N = 11;
-	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, TARGETMAN, STRIKER, PLAYMAKER };
+	constexpr int JOBS_N = 12;
+	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, TARGETMAN, STRIKER, PLAYMAKER, ENGINE };
 	constexpr int SQ = PER_TEAM;
-	int pos[SQ], bonus[SQ][4] = {};
+	int pos[SQ], bonus[SQ][GROW_K] = {};
 	int used = 0;
 	const int prospects = int(next() % (SQ + 1));          // 유망주 0~5명
 	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 카드 0 ~ 2·level+1 장
@@ -724,7 +725,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			used |= 1 << k;
 			pos[i] = POOL[k];
 		}
-		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스
+		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 피지컬 · 체력
 		if (pos[i] != PROSPECT && (level > 0 || i == ace)) {   // 성장은 전직한 선수만 (카드 1장 = +1 · 스탯마다 한 번)
 			const int n = i == ace ? 8 + int(next() % 6) : int(next() % (2 * level + 2));
 			for (int c = 0; c < n; c++) {
@@ -737,13 +738,16 @@ void random_lineup(State &s, int team, unsigned long long r) {
 				st[ok[next() % m]]++;
 			}
 		}
-		bonus[i][ST_SHOT] = st[0];
-		bonus[i][ST_PASS] = st[1];
-		bonus[i][ST_DRIBBLE] = st[2];
-		bonus[i][ST_DEF] = st[3];
+		for (int k = 0; k < GROW_K; k++)
+			bonus[i][k] = st[k];
 	}
 	const int gk = next() % 2 ? default_gk(pos, bonus) : int(next() % SQ);
 	set_lineup(s, team, pos, bonus, gk);
+	int sta[SQ];   // 경기 시작 체력: 절반 팀은 가득 · 절반은 선수마다 0 ~ 최대 무작위 (커리어 경기 사이 이어진 체력 — 11-25)
+	const bool tired = next() % 2;
+	for (int i = 0; i < SQ; i++)
+		sta[i] = tired ? int(next() % (stam_max(s.players[team * PER_TEAM + i]) + 1)) : 99;
+	set_stamina(s, team, sta);
 }
 
 // 길 고르기용 상태 가치 (card.h value_path — 길은 간 뒤의 상태로): team 에 좋을수록 큼 (−1 ~ 1). ctx = const Net *

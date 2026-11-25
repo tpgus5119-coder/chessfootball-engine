@@ -195,7 +195,7 @@ float holder(const State &s, const Sit &x, const float *S, int tac, const Player
 		if (me.f & R_CARRY)
 			b += 0.3f * std::max(0, gain);
 		return b;
-	case A_STANCE:   // 공 임자 제자리 디펜스 = 「강하게」 모으기 (14) — 슛 지대(깊이 6+)에서 더
+	case A_SAVE:   // 공 임자 「강하게」 모으기 (14) — 슛 지대(깊이 6+)에서 더 (11-25 공 임자 제자리 A_STANCE = 버티기 — 덤 없음)
 		return (S[STRONG] - 5) * (depth(x.team, p.pos) >= 6 ? 0.35f : 0.2f);
 	default:
 		return 0.0f;   // 슛은 보이면 쏜다 — 탐색 값이 정한다 (이기는 쪽 슛은 대본이 가로채지 않음)

@@ -34,7 +34,8 @@ inline void hash_state(Fnv &f, const State &s) {
 	for (int u = 0; u < PLAYERS; u++) {
 		const Player &p = s.players[u];
 		f.v(p.pos); f.i(p.placed_order); f.i(p.position); f.i(p.uid); f.i(p.team);
-		f.i(p.stance); f.i(p.stance_left); f.i(p.charge); f.i(p.acted);
+		f.i(p.stance); f.i(p.stance_left); f.i(p.charge); f.i(p.acted); f.i(p.fat); f.i(p.spent);
+		for (int k = 0; k < GROW_K; k++) f.i(p.bonus[k]);
 		f.v(s.half_pos[u]); f.i(s.half_order[u]); f.i(s.st_turn[u]);
 	}
 }

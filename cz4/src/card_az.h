@@ -10,10 +10,10 @@ namespace cf {
 namespace card {
 namespace az {
 
-// ---------- 입력 (평가하는 팀이 늘 +x로 공격하게 뒤집는다) — 판 8 = 특수 성장 칸 없앰 (옛 판 7 망은 tools/cz/net_perks0.py 로 옮긴다) ----------
+// ---------- 입력 (평가하는 팀이 늘 +x로 공격하게 뒤집는다) — 판 9 = 규칙 묶음 6 (11-25 직업 12 · 성장 여섯 · 체력 칸 — 자가학습 처음부터, 옛 망 이식 없음) ----------
 // 칸 번호: 선수·공·존이 놓이는 입력과 수는 박스(골대 포함) 밖 NF = 80칸만 쓴다 (field_tile) · 배치는 자기 진영 박스 밖 NPL = 40칸 (place_tile)
 // 골대 안 키퍼는 칸 입력이 없다 — 숫자 입력 d[22]·d[23](골대 안)과 키퍼 표시(OFF_GK, 골대 밖일 때 그 칸)로 본다
-constexpr int NPOS = POOL_N + 1;                       // 직업 11 + 신입생 칸
+constexpr int NPOS = POOL_N + 1;                       // 직업 12 + 신입생 칸
 constexpr int NF = NT - 2 * 2 * (GOAL_N + 2);           // 80 — 박스 2×4 둘 밖
 constexpr int NPL = (W / 2) * H - 2 * (GOAL_N + 2);     // 40 — 자기 진영(x 0~5) 박스 밖
 constexpr int OFF_PIECE = 0;                           // (rel·NPOS + slot)·NF + 칸
@@ -22,15 +22,16 @@ constexpr int OFF_BALL = OFF_STANCE + 2 * 3 * NF;      // 공 임자: rel·NF + 
 constexpr int OFF_UNPLACED = OFF_BALL + 2 * NF;        // 안 놓인 선수: rel·NPOS + slot
 constexpr int OFF_BENCH = OFF_UNPLACED + 2 * NPOS;     // 드래프트에 남은 직업: rel·POOL_N + slot
 constexpr int OFF_MARKED = OFF_BENCH + 2 * POOL_N;     // 마커에게 붙은 선수
-constexpr int OFF_PSTAT = OFF_MARKED + 2 * NF;         // 성장: (rel·4 + 스탯)·NF + 칸 (스탯마다 +1 한 번)
-constexpr int OFF_CHARGE = OFF_PSTAT + 2 * 4 * NF;     // 「강하게」 모은 선수 (두는 팀만 — 모으기는 그 차례 안에서만)
+constexpr int OFF_PSTAT = OFF_MARKED + 2 * NF;         // 성장: (rel·6 + 스탯)·NF + 칸 (스탯마다 +1 한 번 — 슛·패스·무브·디펜스·피지컬·체력)
+constexpr int OFF_CHARGE = OFF_PSTAT + 2 * GROW_K * NF;     // 「강하게」 모은 선수 (두는 팀만 — 모으기는 그 차례 안에서만)
 constexpr int OFF_ZONE = OFF_CHARGE + NF;              // 태세 존 칸: rel·NF + 칸
 constexpr int OFF_ACTED = OFF_ZONE + 2 * NF;           // 이번 차례에 행동한 두는 팀 선수: me·NF + 칸
 constexpr int OFF_GK = OFF_ACTED + PER_TEAM * NF;      // 골대 밖에 나온 골키퍼: rel·NF + 칸
-constexpr int SPARSE = OFF_GK + 2 * NF;
-static_assert(NF == 80 && NPL == 40 && SPARSE == 4206, "입력 칸 수 (판 8) — tools/az/train.py CF_MODE=card · tools/cz/net_perks0.py 와 같게");
+constexpr int OFF_STAM = OFF_GK + 2 * NF;             // 남은 체력: (rel·4 + min(체력, 3))·NF + 칸 (11-25)
+constexpr int SPARSE = OFF_STAM + 2 * 4 * NF;
+static_assert(NF == 80 && NPL == 40 && SPARSE == 5330, "입력 칸 수 (판 9) — tools/az/train.py CF_MODE=card 와 같게");
 constexpr int DENSE = 26;   // 숫자 입력 (card_az.cpp net_input d[0]~d[25])
-constexpr int MAX_ACTIVE = 96;
+constexpr int MAX_ACTIVE = 128;   // 판 9 — 체력·성장 칸이 늘어 96 → 128
 
 struct NetInput {
 	uint16_t idx[MAX_ACTIVE];
@@ -48,7 +49,7 @@ constexpr int OFF_SAVE = OFF_PLACE + (POOL_N + 1) * NPL;      // 공 없는 선�
 constexpr int OFF_KEEP = OFF_SAVE + NF;                       // 키퍼 롱킥: 받는 me·NF + 칸
 constexpr int OFF_GKIN = OFF_KEEP + PER_TEAM * NF;            // 골키퍼가 골대로 돌아감
 constexpr int NA = OFF_GKIN + 1;
-static_assert(NA == 2171, "수 칸 수 (판 7) — tools/az/train.py CF_MODE=card · tools/cz/net_jobs11.py 와 같게");
+static_assert(NA == 2211, "수 칸 수 (판 9 — 직업 12) — tools/az/train.py CF_MODE=card 와 같게");
 int action_index(const State &s, const Action &a);
 
 // ---------- 망 (입력 → h1 → h2 → 가치·보조·정책 머리) ----------
@@ -104,7 +105,7 @@ struct Rec {
 	float z, q, aux;
 	uint32_t game;
 };
-static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 504, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
+static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 568, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
 
 // 컵 경기처럼 정해진 선수단 5명 — 유망주 0~5명 · 나머지 서로 다른 직업 · 성장 카드 · 골키퍼 = 절반은 디펜스 최고, 절반은 아무나 (학습에 섞는다)
 void random_lineup(State &s, int team, unsigned long long r);
