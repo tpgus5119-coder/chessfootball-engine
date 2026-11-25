@@ -155,7 +155,7 @@ bool marked(const State &s, const Player &p) {   // 상대 마커에 상하좌�
 	if (!p.placed())
 		return false;
 	for (const Player &m : s.players)
-		if (m.team != p.team && m.position == MARKER && m.placed() && s.ball_owner != m.uid && manhattan(m.pos, p.pos) == 1 && phys(m) > phys(p))   // 공을 쥔 마커는 못 잡는다 (11-25)
+		if (m.team != p.team && m.position == MARKER && m.placed() && m.stance == 0 && manhattan(m.pos, p.pos) == 1 && phys(m) > phys(p))   // 태세 중인 마커는 못 잡는다 (11-25 — 공을 쥐어도 잡음)
 			return true;
 	return false;
 }
@@ -787,9 +787,9 @@ static int origins(const State &s, const Player &p, V2 o[2]) {
 
 // 타이탄 착지 밀기 — 도착 칸 상하좌우의 적 모두를 1칸 바깥으로. 밀린 선수는 태세가 풀린다
 // 공 유무와 상관없이 · 타이탄 피지컬 > 그 적 피지컬일 때만 (동점 = 안 밀림 — 11-25). 밀 칸이 막히면(판 밖·사람·박스·골대 · 키퍼는 상대 진영) 그 적만 그대로
-static void titan_push(State &s, const Player &p) {
-	if (p.position != TITAN || s.ball_owner == p.uid)
-		return;   // 공을 쥔 타이탄은 못 민다 (사용자 11-25)
+static void titan_push(State &s, const Player &p, bool stanced = false) {
+	if (p.position != TITAN || stanced)
+		return;   // 태세를 건 채 움직인 타이탄은 못 민다 (사용자 11-25 — 공을 쥐어도 민다)
 	for (const V2 &d : DIRS) {
 		const Player *q = player_at(s, p.pos + d);
 		if (!q || q->team == p.team || phys(p) <= phys(*q) || !stand_ok(s, *q, q->pos + d))
@@ -893,15 +893,15 @@ static bool do_move(State &s, int uid, V2 dest) {
 	emit({ 4, uid, -1, dest, 0, 0, 0, path });
 	pay_point(s, uid);
 	s.players[uid].pos = dest;
+	const int st0 = s.players[uid].stance;
 	{   // 움직이면 태세가 풀린다 · 태세 중이던 선수가 움직여 상대 공 임자 곁에 서면 태클 — 힘 = 태세 힘 + 1 − 움직인 칸
 		Player &mv = s.players[uid];
-		const int st0 = mv.stance;
 		if (mv.stance > 0)
 			mv.stance = 0, mv.stance_left = 0;
 		if (st0 > 0 && s.ball_owner >= 0 && s.players[s.ball_owner].team != team && manhattan(mv.pos, s.players[s.ball_owner].pos) == 1 && !is_any_box(mv.pos))
 			tackle_do(s, uid, std::max(1, st0 + 1 - int(path.size())));
 	}
-	titan_push(s, s.players[uid]);   // 태클을 본 뒤 밀기
+	titan_push(s, s.players[uid], st0 > 0);   // 태클을 본 뒤 밀기 · 태세였으면 안 밂
 	if (path.size() >= 3 && (dest.x - start.x) * forward_dir(team) > 0)
 		rep_add(s, uid, SPRINTER);
 	after_action(s, team);
