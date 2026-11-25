@@ -1,5 +1,5 @@
 name: selfplay4
-# 감독 모드 4대4 (11-21 규칙) 원격 기보 공장 — 20개 작업 × 코어 수 프로세스가 gen3 flat 모드로 자가대전.
+# 감독 모드 4대4 원격 기보 공장 (11-25: 프로세스당 240판 — 작업 시작·묶기 대기 3분 대비 계산 8분으로 늘려 갈래 놀림 줄임) — 20개 작업 × 코어 수 프로세스가 gen3 flat 모드로 자가대전.
 # 규칙 = cz4/src (맥 게임 저장소 gdext/src 와 같은 파일). 망 = release "champion4" 의 champion4.bin (flat 2048/512).
 # 기보 묶음 이름에 규칙 지문(cz4/src 10개 파일의 sha256 앞 10자)을 붙인다 — 맥(tools/az/gh.py sync4)은 지금 규칙과 지문이 같은 묶음만 받는다(옛 규칙 기보가 섞이지 않게).
 on:
@@ -7,7 +7,7 @@ on:
     inputs:
       games:
         description: "프로세스당 판수"
-        default: "60"
+        default: "240"
       sims:
         description: "풀탐색 횟수"
         default: "256"
