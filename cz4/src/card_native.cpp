@@ -429,6 +429,7 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 	s.pts = cf::POINTS_PER_TURN;
 	(void)x, (void)y;   // 옛 루즈볼 칸 자리 (화면 호환 — 안 씀)
 	s.ball_owner = owner;
+	s.hold_used = 0;
 	const int bt = s.ball_team();
 	for (int t = 0; t < 2; t++)
 		s.role[t] = t == bt ? ck::R_ATK : ck::R_DEF;

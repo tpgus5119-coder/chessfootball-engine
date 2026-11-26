@@ -69,6 +69,7 @@ struct State {
 	int gk_def[2] = { GK_DEF0, GK_DEF0 }, gk_kick[2] = { GK_KICK0, GK_KICK0 }, gk_range[2] = { GK_RANGE0, GK_RANGE0 };   // 골키퍼 디펜스(= 골대 체력)·롱킥 힘·롱킥 범위
 	int role[2] = { R_DEF, R_ATK };
 	int hold = 0;                          // 공 임자가 태클을 버티는 힘 (공을 다룬 그 행동의 남은 힘 · 태클에 깎임)
+	int hold_used = 0;                     // 1 = 이번 공 임자가 버티기를 썼다 (공 임자가 바뀌면 0 — 11-26 한 번만)
 	int touch_team = -1, touch_mask = 0;   // 이번 공격에서 공을 만진 아군 (uid 비트) — 가담
 	int poss_turn = 0;                     // 공 임자 팀이 바뀐 때의 turn_count (전술 대본만 — 규칙엔 안 쓴다)
 	Player players[PLAYERS];

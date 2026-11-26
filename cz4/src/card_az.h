@@ -30,7 +30,7 @@ constexpr int OFF_GK = OFF_ACTED + PER_TEAM * NF;      // 골대 밖에 나온 �
 constexpr int OFF_STAM = OFF_GK + 2 * NF;             // 남은 체력: (rel·4 + min(체력, 3))·NF + 칸 (11-25)
 constexpr int SPARSE = OFF_STAM + 2 * 4 * NF;
 static_assert(NF == 80 && NPL == 40 && SPARSE == 5166, "입력 칸 수 (판 9 · 11-26 직업 11) — tools/az/train.py CF_MODE=card 와 같게");
-constexpr int DENSE = 26;   // 숫자 입력 (card_az.cpp net_input d[0]~d[25])
+constexpr int DENSE = 27;   // 숫자 입력 (card_az.cpp net_input d[0]~d[26] — 11-26 버티기 씀 칸 더해 27)
 constexpr int MAX_ACTIVE = 128;   // 판 9 — 체력·성장 칸이 늘어 96 → 128
 
 struct NetInput {
@@ -105,7 +105,7 @@ struct Rec {
 	float z, q, aux;
 	uint32_t game;
 };
-static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 568, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
+static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 572, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
 
 // 컵 경기처럼 정해진 선수단 5명 — 유망주 0~5명 · 나머지 서로 다른 직업 · 성장 카드 · 골키퍼 = 절반은 디펜스 최고, 절반은 아무나 (학습에 섞는다)
 void random_lineup(State &s, int team, unsigned long long r);

@@ -118,6 +118,8 @@ static void set_owner(State &s, int uid) {
 	for (Player &q : s.players)
 		if (q.uid != uid)
 			q.charge = 0;   // 공을 놓으면 모은 힘은 사라진다
+	if (uid != s.ball_owner)
+		s.hold_used = 0;   // 새로 공을 잡으면 버티기 1번 되살아남 (11-26)
 	s.ball_owner = uid;
 	s.hold = 0;
 	if (uid != -1) {
@@ -559,6 +561,16 @@ static bool screened(const State &s, const Player &p, V2 tile, V2 last, int du) 
 	return q->stance > 0 && (SCREEN_MODE == 1 || phys(*q) > phys(s.players[du]));
 }
 
+// 스크린이 실제로 한 번 막았다 (실행된 드리블·패스·슛 길) → 그 스크린 선수 태세가 풀린다 (11-26 — 태클·존에 진 수비수처럼)
+// 길 고르기(path_key)의 미리 셈에서는 풀지 않는다
+static void screen_spent(State &s, V2 tile) {
+	for (Player &q : s.players)
+		if (q.placed() && q.pos == tile) {
+			q.stance = 0;
+			q.stance_left = 0;
+		}
+}
+
 // 경합: 거는 쪽 힘 > 당하는 쪽 힘일 때만 이긴다 (동점 = 당하는 쪽) — 존(공 든 쪽이 건다) · 태클(태클러가 건다) · 슛(골대 체력에 건다)
 static inline bool beats(int atk, int def) { return atk > def; }
 
@@ -808,8 +820,12 @@ static V2 dribble_run(State &s, int uid, int &val, const std::vector<V2> &path) 
 	bool met[PLAYERS] = {};
 	for (const V2 &t : path) {
 		int du = zone[idx(t)];
-		if (du == -1 || met[du] || screened(s, s.players[uid], t, path.back(), du))
+		if (du == -1 || met[du])
 			continue;
+		if (screened(s, s.players[uid], t, path.back(), du)) {
+			screen_spent(s, t);
+			continue;
+		}
 		met[du] = true;
 		if (!zone_contest(s, s.players[uid], val, du, t)) {
 			set_owner(s, du);   // 수비수가 제 칸에서 공을 갖는다
@@ -961,8 +977,12 @@ static bool send_ball(State &s, const Player &p, int &val, const std::vector<V2>
 	bool met[PLAYERS] = {};
 	for (const V2 &t : path) {
 		int du = zone[idx(t)];
-		if (du == -1 || met[du] || screened(s, p, t, path.back(), du))
+		if (du == -1 || met[du])
 			continue;
+		if (screened(s, p, t, path.back(), du)) {
+			screen_spent(s, t);
+			continue;
+		}
 		met[du] = true;
 		if (!zone_contest(s, p, val, du, t)) {
 			set_owner(s, du);
@@ -1134,9 +1154,9 @@ static bool do_charge(State &s, int uid, V2 dest) {
 	return true;
 }
 
-// 버티기 (11-25): 공 임자만 · 포인트 1 · 체력 1 → 버티는 힘 = 피지컬. 지금 버티는 힘 ≥ 피지컬이면 수 아님
+// 버티기 (11-25 · 11-26 공 임자마다 한 번): 공 임자만 · 포인트 1 · 체력 1 → 버티는 힘 = 피지컬. 지금 버티는 힘 ≥ 피지컬이면 수 아님
 static bool hold_ok(const State &s, const Player &p) {
-	return can_act(s, p) && s.ball_owner == p.uid && s.hold < phys(p);
+	return can_act(s, p) && s.ball_owner == p.uid && !s.hold_used && s.hold < phys(p);
 }
 
 static bool do_hold(State &s, int uid, V2 dest) {
@@ -1145,6 +1165,7 @@ static bool do_hold(State &s, int uid, V2 dest) {
 		return false;
 	pay_point(s, uid);
 	s.hold = phys(p);
+	s.hold_used = 1;
 	after_action(s, p.team);
 	return true;
 }

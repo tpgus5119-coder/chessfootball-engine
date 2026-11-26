@@ -116,6 +116,7 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[23] = s.gk_in(opp);
 	d[24] = float(s.gk_kick[team]) / 6.0f;   // 키퍼 롱킥 힘 — 우리 · 상대
 	d[25] = float(s.gk_kick[opp]) / 6.0f;
+	d[26] = s.hold_used;   // 공 임자가 버티기를 이미 씀 (11-26)
 }
 
 int action_index(const State &s, const Action &a) {
