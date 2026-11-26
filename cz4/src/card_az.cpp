@@ -63,7 +63,7 @@ void net_input(const State &s, int team, NetInput &in) {
 		add(in, OFF_STAM + (rel * 4 + std::min(3, stam(q))) * NF, f);   // 남은 체력 0·1·2·3+ (골대 안 키퍼는 칸 없음)
 		if (s.gk[q.team] == q.uid)
 			add(in, OFF_GK + rel * NF, f);   // 골대 안이면 f < 0 — 입력 없음 (d[22]·d[23])
-		if (q.tai)   // 태세 (우리 차례 = 다음 행동 +1 · 상대 차례 = 존·버티기)
+		if (q.tai)   // 태세 중 (존·버티기)
 			add(in, OFF_TAI + rel * NF, f);
 	}
 	if (s.phase == PLAY && s.turn_team >= 0)   // 두는 팀: 이번 차례에 행동한 선수 칸
@@ -118,6 +118,23 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[25] = float(s.gk_kick[opp]) / 6.0f;
 }
 
+// 상대 칸 번호: (dx, dy) 맨해튼 1~RREL → 0~NREL−1 (−1 = 범위 밖)
+static const struct Rel {
+	int16_t at[2 * RREL + 1][2 * RREL + 1];
+	int8_t dx[NREL], dy[NREL];
+	Rel() {
+		int n = 0;
+		for (int y = -RREL; y <= RREL; y++)
+			for (int x = -RREL; x <= RREL; x++) {
+				const bool ok = (x || y) && std::abs(x) + std::abs(y) <= RREL;
+				at[y + RREL][x + RREL] = int16_t(ok ? n : -1);
+				if (ok)
+					dx[n] = int8_t(x), dy[n] = int8_t(y), n++;
+			}
+	}
+	int of(int x, int y) const { return std::abs(x) + std::abs(y) > RREL || (!x && !y) ? -1 : at[y + RREL][x + RREL]; }
+} g_rel;
+
 int action_index(const State &s, const Action &a) {
 	const int team = s.turn_team;
 	const int me = a.uid - PER_TEAM * team;   // 두는 팀 안 번호 (배치는 uid = 드래프트 슬롯)
@@ -128,11 +145,18 @@ int action_index(const State &s, const Action &a) {
 		case A_PASS: {
 			if (a.t == A_MOVE && is_goal_of(team, a.dest))
 				return mine ? OFF_GKIN : -1;   // 골키퍼가 골대로 돌아감
-			const int f = ftile(a.dest, team);
-			if (!mine || f < 0)
+			if (!mine || !in_bounds(a.dest))
+				return -1;
+			const V2 ref = s.players[a.uid].pos;
+			if (!in_bounds(ref))
+				return -1;
+			// 골대 안 키퍼: dy = 골대 가운데(3.5) 기준 — 아래 칸들 1·2·… · 위 칸들 −1·−2·… (0 없음 · 위아래 거울에서 dy → −dy · 칸마다 다름)
+			const int dy = is_goal(ref) ? (a.dest.y > GOAL_Y0 ? a.dest.y - GOAL_Y0 : a.dest.y - GOAL_Y0 - 1) : a.dest.y - ref.y;
+			const int r = g_rel.of((a.dest.x - ref.x) * forward_dir(team), dy);
+			if (r < 0)
 				return -1;
 			const int kind = a.t == A_MOVE ? 0 : a.t == A_DRIBBLE ? 1 : 2;
-			return OFF_TILE + (kind * PER_TEAM + me) * NF + f;
+			return OFF_TILE + (kind * PER_TEAM + me) * NREL + r;
 		}
 		case A_SHOT:
 			return mine ? OFF_SHOT + me : -1;
@@ -144,15 +168,75 @@ int action_index(const State &s, const Action &a) {
 			const int p = g_tiles.place[flip_tile(a.dest, team)];
 			return p < 0 ? -1 : OFF_PLACE + a.uid * NPL + p;
 		}
-		case A_KEEP: {   // 키퍼 롱킥: 받는 아군(me) 발밑
-			const int f = ftile(a.dest, team);
-			if (!mine || f < 0)
-				return -1;
-			return OFF_KEEP + me * NF + f;
-		}
+		case A_KEEP:   // 키퍼 롱킥: 받는 아군(me) 발밑
+			return mine ? OFF_KEEP + me : -1;
 		default:
 			return -1;
 	}
+}
+
+// ---------- 위아래 거울 표 ----------
+static const Mirror g_mirror = [] {
+	Mirror m;
+	m.in.resize(SPARSE);
+	m.act.resize(NA);
+	m.plane.assign(SPARSE, -1);
+	m.tile.assign(SPARSE, -1);
+	m.glob.assign(SPARSE, -1);
+	for (int i = 0; i < SPARSE; i++)
+		m.in[i] = uint16_t(i);
+	int fl[NF], ft[NF];   // 칸 입력 번호 f → 거울 f · 판 칸(뒤집은 판 y·W + x)
+	for (int t = 0; t < NT; t++)
+		if (g_tiles.field[t] >= 0) {
+			const V2 v{ t % W, t / W };
+			fl[g_tiles.field[t]] = g_tiles.field[(H - 1 - v.y) * W + v.x];
+			ft[g_tiles.field[t]] = t;
+		}
+	struct Blk {
+		int off, n;
+	};
+	const Blk tile_blocks[] = { { OFF_PIECE, 2 * NPOS }, { OFF_STANCE, 6 }, { OFF_BALL, 2 }, { OFF_MARKED, 2 }, { OFF_PSTAT, 2 * GROW_K }, { OFF_TAI, 2 },
+		{ OFF_ZONE, 2 }, { OFF_ACTED, PER_TEAM }, { OFF_GK, 2 }, { OFF_STAM, 8 } };
+	int pl = 0;
+	for (const Blk &b : tile_blocks)
+		for (int k = 0; k < b.n; k++, pl++)
+			for (int f = 0; f < NF; f++) {
+				const int i = b.off + k * NF + f;
+				m.in[i] = uint16_t(b.off + k * NF + fl[f]);
+				m.plane[i] = int16_t(pl);
+				m.tile[i] = int16_t(ft[f]);
+			}
+	m.planes = pl;
+	int g = 0;
+	for (int i = OFF_UNPLACED; i < OFF_MARKED; i++)   // 안 놓인 선수 · 드래프트 남은 직업 = 칸 없음
+		m.glob[i] = int16_t(g++);
+	m.globs = g;
+	for (int i = 0; i < SPARSE; i++)
+		if (m.plane[i] < 0 && m.glob[i] < 0) {
+			fprintf(stderr, "거울 표: 입력 %d 이 어느 묶음에도 없음\n", i);
+			abort();
+		}
+	for (int a = 0; a < NA; a++)
+		m.act[a] = uint16_t(a);
+	for (int kk = 0; kk < 3 * PER_TEAM; kk++)
+		for (int r = 0; r < NREL; r++)
+			m.act[OFF_TILE + kk * NREL + r] = uint16_t(OFF_TILE + kk * NREL + g_rel.of(g_rel.dx[r], -g_rel.dy[r]));
+	int pm[NPL];
+	for (int t = 0; t < NT; t++)
+		if (g_tiles.place[t] >= 0)
+			pm[g_tiles.place[t]] = g_tiles.place[(H - 1 - t / W) * W + t % W];
+	for (int sl = 0; sl <= POOL_N; sl++)
+		for (int p = 0; p < NPL; p++)
+			m.act[OFF_PLACE + sl * NPL + p] = uint16_t(OFF_PLACE + sl * NPL + pm[p]);
+	return m;
+}();
+const Mirror &mirror() { return g_mirror; }
+
+bool mirror_exact(const State &s) {
+	if (s.ball_owner < 0)
+		return true;
+	const Player &o = s.players[s.ball_owner];
+	return !(s.gk[o.team] == o.uid && is_goal_of(o.team, o.pos));
 }
 
 struct Eval {
@@ -197,6 +281,7 @@ static float half_to_float(uint16_t h) {   // IEEE 754 반정밀도 → 단정�
 	return f;
 }
 
+// 머리표 int 10칸: MAGIC · 판(1 fp32 · 2 fp16 · 3 w1 int8) · SPARSE · DENSE · h1 · h2 · NA · arch(0 flat · 1 ResNet) · blocks · ch
 bool Net::load_mem(const unsigned char *p, size_t n) {
 	size_t at = 0;
 	auto take = [&](void *dst, size_t bytes) {
@@ -206,23 +291,22 @@ bool Net::load_mem(const unsigned char *p, size_t n) {
 		at += bytes;
 		return true;
 	};
-	int head[7];
-	if (!take(head, sizeof(head)) || head[0] != MAGIC || head[1] < 1 || head[1] > 3 || head[2] != SPARSE || head[3] != DENSE ||
-			head[4] <= 0 || head[4] > 2048 || head[5] <= 0 || head[5] > 512 || head[6] != NA)
+	arch = -1;
+	int head[10];
+	if (!take(head, sizeof(head)) || head[0] != MAGIC || head[1] < 1 || head[1] > 3 || head[2] != SPARSE || head[3] != DENSE || head[6] != NA ||
+			head[5] <= 0 || head[5] > 1024 || head[7] < 0 || head[7] > 1)
 		return false;
-	h1 = head[4];
+	const int ar = head[7];
+	if (ar == 0 && (head[4] <= 0 || head[4] > 4096))
+		return false;
+	if (ar == 1 && (head[8] < 1 || head[8] > 16 || head[9] < 4 || head[9] > 128 || head[1] == 3))
+		return false;
+	h1 = ar == 0 ? head[4] : 0;
 	h2 = head[5];
 	na = head[6];
-	w1.assign(size_t(SPARSE + DENSE) * h1, 0.0f);
-	b1.resize(h1);
-	w2.resize(size_t(h1) * h2);
-	b2.resize(h2);
-	wv.resize(h2);
-	wa.resize(h2);
-	wp.resize(size_t(h2) * na);
-	bp.resize(na);
-	// 판 2 = 무게를 16비트 반정밀도로 (앱 용량 절반 — tools/cz/net_fp16.py, 2026-10-30 사용자 "용량 줄이고 최적화"). 읽으면서 32비트로 푼다
-	// 판 3 = 첫 층 w1 만 int8 (64칸 묶음마다 fp16 scale) + 나머지 판 2 와 같음 (게임 전용 ≈19.6MB — tools/net_q8/net_q8.py, 11-22)
+	blocks = ar == 1 ? head[8] : 0;
+	ch = ar == 1 ? head[9] : 0;
+	// 판 2 = 무게를 16비트 반정밀도로 · 판 3 = 첫 층 w1 만 int8 (64칸 묶음마다 fp16 scale) + 나머지 판 2 와 같음 (게임 전용 — tools/net_q8/net_q8.py)
 	const bool half = head[1] >= 2;
 	auto takef = [&](float *dst, size_t cnt) {
 		if (!half)
@@ -233,6 +317,10 @@ bool Net::load_mem(const unsigned char *p, size_t n) {
 			dst[i] = half_to_float(uint16_t(p[at] | (p[at + 1] << 8)));
 		return true;
 	};
+	auto takev = [&](std::vector<float> &v, size_t cnt) {
+		v.resize(cnt);
+		return takef(v.data(), cnt);
+	};
 	auto take_q8 = [&](float *dst, size_t rows, int cols) {   // 판 3 w1: scale fp16 [rows × cols/64] 다음 값 int8 [rows × cols]
 		constexpr int G = 64;
 		if (cols % G != 0)
@@ -240,34 +328,43 @@ bool Net::load_mem(const unsigned char *p, size_t n) {
 		const size_t ng = rows * size_t(cols / G);
 		if (at + 2 * ng + rows * size_t(cols) > n)
 			return false;
-		const unsigned char *sc = p + at, *q = p + at + 2 * ng;
+		const unsigned char *sc = p + at, *q8 = p + at + 2 * ng;
 		for (size_t g = 0; g < ng; g++) {
 			const float k = half_to_float(uint16_t(sc[2 * g] | (sc[2 * g + 1] << 8)));
 			for (int j = 0; j < G; j++)
-				dst[g * G + j] = k * float(int8_t(q[g * G + j]));
+				dst[g * G + j] = k * float(int8_t(q8[g * G + j]));
 		}
 		at += 2 * ng + rows * size_t(cols);
 		return true;
 	};
-	bool ok = (head[1] == 3 ? take_q8(w1.data(), size_t(SPARSE + DENSE), h1) : takef(w1.data(), size_t(SPARSE + DENSE) * h1)) &&
-			takef(b1.data(), b1.size()) && takef(w2.data(), w2.size()) &&
-			takef(b2.data(), b2.size()) && takef(wv.data(), wv.size()) && takef(&bv, 1) &&
-			takef(wa.data(), wa.size()) && takef(&ba, 1) && takef(wp.data(), wp.size()) &&
-			takef(bp.data(), bp.size());
-	if (!ok) {
-		h1 = h2 = 0;
-		return false;
+	bool ok;
+	if (ar == 0) {
+		w1.assign(size_t(SPARSE + DENSE) * h1, 0.0f);
+		ok = (head[1] == 3 ? take_q8(w1.data(), size_t(SPARSE + DENSE), h1) : takef(w1.data(), size_t(SPARSE + DENSE) * h1)) &&
+				takev(b1, h1) && takev(w2, size_t(h1) * h2) && takev(b2, h2);
+	} else {
+		const Mirror &m = mirror();
+		const size_t C = size_t(ch);
+		ok = takev(ws, size_t(m.planes) * 9 * C) && takev(wg, size_t(m.globs + DENSE) * C) && takev(bs, C);
+		c1.resize(blocks), cb1.resize(blocks), q.resize(blocks), c2.resize(blocks), cb2.resize(blocks);
+		for (int k = 0; k < blocks && ok; k++)
+			ok = takev(c1[k], 9 * C * C) && takev(cb1[k], C) && takev(q[k], C * C) && takev(c2[k], 9 * C * C) && takev(cb2[k], C);
+		ok = ok && takev(wh, C * RES_HEAD) && takev(bh, RES_HEAD) && takev(wf, (2 * C + RES_HEAD * NT) * size_t(h2)) && takev(bf, h2);
 	}
+	ok = ok && takev(wv, h2) && takef(&bv, 1) && takev(wa, h2) && takef(&ba, 1) && takev(wp, size_t(h2) * na) && takev(bp, na);
+	if (!ok)
+		return false;
 	// 정책 머리를 **수마다 한 줄**(NA×h2)로 뒤집어 둔다 — 파일은 h2×NA라 수 하나를 셀 때 NA칸씩 건너뛰며 읽었다 (캐시 낭비)
 	std::vector<float> t(wp.size());
 	for (int k = 0; k < h2; k++)
 		for (int a = 0; a < na; a++)
 			t[size_t(a) * h2 + k] = wp[size_t(k) * na + a];
 	wp.swap(t);
+	arch = ar;
 	return true;
 }
 
-static void forward(const Net &net, const NetInput &in, std::vector<float> &b) {
+static void forward_flat(const Net &net, const NetInput &in, std::vector<float> &b) {
 	static thread_local std::vector<float> a;
 	a.assign(net.b1.begin(), net.b1.end());
 	const int h1 = net.h1;
@@ -300,6 +397,195 @@ static void forward(const Net &net, const NetInput &in, std::vector<float> &b) {
 		b[k] = std::min(std::max(b[k], 0.0f), 1.0f);
 }
 
+// 3×3 합성곱 (0 채움): out[t][co] += Σ_k Σ_ci in[t + d_k][ci] · w[k][ci][co] — 칸 · 채널 순 배열 (안쪽 고리 = 채널 연속 → NEON 벡터)
+// 커널 k = ky·3 + kx · d = (kx − 1, ky − 1) = PyTorch conv2d(padding 1) 와 같은 뜻. 채널 수를 틀 인자로 (16·24·32·48·64 — 고리를 펼친다)
+template <int C>
+static void conv3_t(const float *in, const float *w, const float *bias, float *out) {
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++) {
+			float o[C];
+			for (int co = 0; co < C; co++)
+				o[co] = bias[co];
+			for (int ky = 0; ky < 3; ky++) {
+				const int yy = y + ky - 1;
+				if (yy < 0 || yy >= H)
+					continue;
+				for (int kx = 0; kx < 3; kx++) {
+					const int xx = x + kx - 1;
+					if (xx < 0 || xx >= W)
+						continue;
+					const float *iv = in + size_t(yy * W + xx) * C;
+					const float *wk = w + size_t(ky * 3 + kx) * C * C;
+					for (int ci = 0; ci < C; ci++) {
+						const float v = iv[ci];
+						const float *row = wk + size_t(ci) * C;
+						for (int co = 0; co < C; co++)
+							o[co] += v * row[co];
+					}
+				}
+			}
+			std::memcpy(out + size_t(y * W + x) * C, o, sizeof(o));
+		}
+}
+
+static void conv3(const float *in, const float *w, const float *bias, float *out, int C) {
+	switch (C) {
+		case 16: return conv3_t<16>(in, w, bias, out);
+		case 24: return conv3_t<24>(in, w, bias, out);
+		case 32: return conv3_t<32>(in, w, bias, out);
+		case 48: return conv3_t<48>(in, w, bias, out);
+		case 64: return conv3_t<64>(in, w, bias, out);
+		default: break;
+	}
+	for (int t = 0; t < NT; t++)
+		std::memcpy(out + size_t(t) * C, bias, sizeof(float) * C);
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++) {
+			float *o = out + size_t(y * W + x) * C;
+			for (int ky = 0; ky < 3; ky++) {
+				const int yy = y + ky - 1;
+				if (yy < 0 || yy >= H)
+					continue;
+				for (int kx = 0; kx < 3; kx++) {
+					const int xx = x + kx - 1;
+					if (xx < 0 || xx >= W)
+						continue;
+					const float *iv = in + size_t(yy * W + xx) * C;
+					const float *wk = w + size_t(ky * 3 + kx) * C * C;
+					for (int ci = 0; ci < C; ci++) {
+						const float v = iv[ci];
+						const float *row = wk + size_t(ci) * C;
+						for (int co = 0; co < C; co++)
+							o[co] += v * row[co];
+					}
+				}
+			}
+		}
+}
+
+static void forward_res(const Net &net, const State &s, const NetInput &in, std::vector<float> &b) {
+	(void)s;
+	const Mirror &m = mirror();
+	const int C = net.ch;
+	static thread_local std::vector<float> x, u, t1, t2;
+	x.resize(size_t(NT) * C), u.resize(size_t(NT) * C), t1.resize(size_t(NT) * C), t2.resize(size_t(NT) * C);
+	// 줄기: 칸 없는 입력(+ 숫자) → 채널 덤 · 칸 입력 → 3×3 (켜진 칸 하나가 곁 9칸에 더한다)
+	std::vector<float> g(net.bs.begin(), net.bs.end());
+	for (int i = 0; i < in.n; i++) {
+		const int gi = m.glob[in.idx[i]];
+		if (gi >= 0) {
+			const float *row = &net.wg[size_t(gi) * C];
+			for (int c = 0; c < C; c++)
+				g[c] += row[c];
+		}
+	}
+	for (int k = 0; k < DENSE; k++) {
+		const float v = in.dense[k];
+		if (v == 0.0f)
+			continue;
+		const float *row = &net.wg[size_t(m.globs + k) * C];
+		for (int c = 0; c < C; c++)
+			g[c] += v * row[c];
+	}
+	for (int t = 0; t < NT; t++)
+		std::memcpy(&x[size_t(t) * C], g.data(), sizeof(float) * C);
+	for (int i = 0; i < in.n; i++) {
+		const int pl = m.plane[in.idx[i]];
+		if (pl < 0)
+			continue;
+		const int t0 = m.tile[in.idx[i]], x0 = t0 % W, y0 = t0 / W;
+		for (int ky = 0; ky < 3; ky++)
+			for (int kx = 0; kx < 3; kx++) {   // out(y, x) += w[ky][kx] · in(y + ky − 1, x + kx − 1) → 켜진 (y0, x0) 는 (y0 − ky + 1, x0 − kx + 1) 에
+				const int yy = y0 - ky + 1, xx = x0 - kx + 1;
+				if (yy < 0 || yy >= H || xx < 0 || xx >= W)
+					continue;
+				const float *row = &net.ws[(size_t(pl) * 9 + ky * 3 + kx) * C];
+				float *o = &x[size_t(yy * W + xx) * C];
+				for (int c = 0; c < C; c++)
+					o[c] += row[c];
+			}
+	}
+	for (int k = 0; k < net.blocks; k++) {
+		for (size_t i = 0; i < x.size(); i++)
+			u[i] = std::max(0.0f, x[i]);
+		conv3(u.data(), net.c1[k].data(), net.cb1[k].data(), t1.data(), C);
+		std::vector<float> mean(C, 0.0f);
+		for (size_t i = 0; i < t1.size(); i++) {
+			t1[i] = std::max(0.0f, t1[i]);
+			mean[i % C] += t1[i];
+		}
+		std::vector<float> gb(C, 0.0f);   // 전역 평균 덤 (KataGo global pooling)
+		for (int ci = 0; ci < C; ci++) {
+			const float v = mean[ci] / float(NT);
+			const float *row = &net.q[k][size_t(ci) * C];
+			for (int co = 0; co < C; co++)
+				gb[co] += v * row[co];
+		}
+		for (size_t i = 0; i < t1.size(); i++)
+			t1[i] += gb[i % C];
+		conv3(t1.data(), net.c2[k].data(), net.cb2[k].data(), t2.data(), C);
+		for (size_t i = 0; i < x.size(); i++)
+			x[i] += t2[i];
+	}
+	// 머리: relu → 평균·최대 (2C) + 1×1 칸 머리 4장 (RES_HEAD·NT, 판 순서 = 채널마다 칸 96)
+	const int F = 2 * C + RES_HEAD * NT;
+	static thread_local std::vector<float> f;
+	f.assign(F, 0.0f);
+	for (int c = 0; c < C; c++)
+		f[C + c] = 0.0f;
+	for (int t = 0; t < NT; t++)
+		for (int c = 0; c < C; c++) {
+			const float v = std::max(0.0f, x[size_t(t) * C + c]);
+			f[c] += v / float(NT);
+			f[C + c] = std::max(f[C + c], v);
+			u[size_t(t) * C + c] = v;
+		}
+	for (int t = 0; t < NT; t++)
+		for (int h = 0; h < RES_HEAD; h++) {
+			float v = net.bh[h];
+			for (int c = 0; c < C; c++)
+				v += u[size_t(t) * C + c] * net.wh[size_t(c) * RES_HEAD + h];
+			f[2 * C + h * NT + t] = std::max(0.0f, v);
+		}
+	const int h2 = net.h2;
+	b.assign(net.bf.begin(), net.bf.end());
+	for (int j = 0; j < F; j++) {
+		const float v = f[j];
+		if (v == 0.0f)
+			continue;
+		const float *row = &net.wf[size_t(j) * h2];
+		for (int k = 0; k < h2; k++)
+			b[k] += v * row[k];
+	}
+	for (int k = 0; k < h2; k++)
+		b[k] = std::min(std::max(b[k], 0.0f), 1.0f);
+}
+
+static void forward(const Net &net, const State &s, const NetInput &in, std::vector<float> &b) {
+	if (net.arch == 1)
+		forward_res(net, s, in, b);
+	else
+		forward_flat(net, in, b);
+}
+
+float net_eval(const Net &net, const NetInput &in, const int *ai, int n, float *logits) {
+	static thread_local std::vector<float> b;
+	State dummy;
+	forward(net, dummy, in, b);
+	float v = net.bv;
+	for (int k = 0; k < net.h2; k++)
+		v += b[k] * net.wv[k];
+	for (int i = 0; i < n; i++) {
+		logits[i] = 0.0f;
+		if (ai[i] < 0 || ai[i] >= net.na)
+			continue;
+		float l = net.bp[ai[i]];
+		for (int k = 0; k < net.h2; k++)
+			l += b[k] * net.wp[size_t(ai[i]) * net.h2 + k];
+		logits[i] = l;
+	}
+	return std::tanh(v);
+}
 
 static void evaluate(const Net &net, const State &s, const std::vector<Action> &acts, Eval &out) {
 	out.logits.assign(acts.size(), 0.0f);
@@ -310,7 +596,7 @@ static void evaluate(const Net &net, const State &s, const std::vector<Action> &
 	NetInput in;
 	net_input(s, s.turn_team, in);
 	static thread_local std::vector<float> b;
-	forward(net, in, b);
+	forward(net, s, in, b);
 	const int h2 = net.h2;
 	float v = net.bv;   // 보조 머리(wa·ba)는 학습 목표용 — 탐색엔 안 쓴다
 	for (int k = 0; k < h2; k++)
@@ -680,6 +966,18 @@ Result search(const State &s0, const Net &net, const Params &p) {
 	std::vector<double> pi;
 	tree.improved_policy(r, pi);
 	res.policy.assign(pi.begin(), pi.end());
+	{   // 정책 놀람 KL(π' ‖ softmax(logit)) — KataGo 표본 무게
+		double mx = -1e30, sum = 0.0;
+		for (size_t i = 0; i < k; i++)
+			mx = std::max(mx, double(r.logits[i]));
+		for (size_t i = 0; i < k; i++)
+			sum += std::exp(double(r.logits[i]) - mx);
+		double kl = 0.0;
+		for (size_t i = 0; i < k; i++)
+			if (pi[i] > 1e-12)
+				kl += pi[i] * (std::log(pi[i]) - (double(r.logits[i]) - mx - std::log(sum)));
+		res.surprise = float(std::max(0.0, kl));
+	}
 	std::vector<double> q;
 	tree.completed_q(r, q);
 	double rv = 0.0;
@@ -690,23 +988,25 @@ Result search(const State &s0, const Net &net, const Params &p) {
 }
 
 
+static inline unsigned long long xs(unsigned long long &r) {
+	r ^= r >> 12;
+	r ^= r << 25;
+	r ^= r >> 27;
+	return r * 0x2545F4914F6CDD1Dull;
+}
+
 void random_lineup(State &s, int team, unsigned long long r) {
-	auto next = [&]() {
-		r ^= r >> 12;
-		r ^= r << 25;
-		r ^= r >> 27;
-		return r * 0x2545F4914F6CDD1Dull;
-	};
-	// 커리어와 같은 꼴: 직업 11 · 성장은 카드 셈 · 선수단 5명 중 골키퍼 1명 (절반은 디펜스가 가장 높은 선수 = 커리어 기본값·상대 학교, 절반은 아무나)
-	constexpr int JOBS_N = 11;
-	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER, ENGINE };
-	constexpr int SQ = PER_TEAM;
+	auto next = [&]() { return xs(r); };
+	// 커리어와 같은 꼴: 직업 12 · 성장 5단계(grow_steps) · 선수단 6명(core/career.gd SQUAD) 중 선발 5명 무작위 · 골키퍼 = 선발 아무나 (11-27)
+	constexpr int JOBS_N = 12;
+	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER, ENGINE, BOOSTER };
+	constexpr int SQ = PER_TEAM + 1;
 	int pos[SQ], bonus[SQ][GROW_K] = {};
 	int used = 0;
-	const int prospects = int(next() % (SQ + 1));          // 유망주 0~5명
-	const int level = int(next() % 4);                    // 팀 성장 정도 0~3 → 선수당 카드 0 ~ 2·level+1 장
+	const int prospects = int(next() % (SQ + 1));          // 유망주 0~6명
+	const int level = int(next() % 4);                    // 팀 성장 정도 0~3
 	const int mono = next() % 5 == 0 ? POOL[next() % JOBS_N] : 0;   // 20 % 는 한 직업 팀
-	const bool ace_team = next() % 10 < 3;   // 몰아 키운 에이스: 30 % 팀은 전직 선수 한 명이 카드 많이
+	const bool ace_team = next() % 10 < 3;   // 몰아 키운 에이스: 30 % 팀은 전직 선수 한 명이 만랩
 	const int ace = ace_team && prospects < SQ ? prospects + int(next() % (SQ - prospects)) : -1;
 	for (int i = 0; i < SQ; i++) {
 		if (i < prospects) {
@@ -721,29 +1021,183 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			used |= 1 << k;
 			pos[i] = POOL[k];
 		}
-		int st[GROW_K] = {};   // 슛 · 패스 · 무브 · 디펜스 · 피지컬 · 체력
-		if (pos[i] != PROSPECT && (level > 0 || i == ace)) {   // 성장은 전직한 선수만 (카드 1장 = +1 · 스탯마다 한 번)
-			const int n = i == ace ? 8 + int(next() % 6) : int(next() % (2 * level + 2));
-			for (int c = 0; c < n; c++) {
-				int ok[GROW_K], m = 0;
-				for (int k = 0; k < GROW_K; k++)
-					if (grow_ok(pos[i], st, k))
-						ok[m++] = k;
-				if (!m)
-					break;
-				st[ok[next() % m]]++;
-			}
+		// 성장 단계 (11-26 묶음 8): 신입생 0~2 (①② · 체력 세부는 ① 까지) · 전직 선수 = 전직 단계(3 · 엔진·부스터 2) ~ + level · 에이스 = 5 (만랩)
+		const int det = family_of(pos[i]) >= 0 ? family_of(pos[i]) : int(next() % STAT_N);
+		const int need = pos[i] == PROSPECT ? 0 : det == ST_STAM ? 2 : 3;
+		const int steps = pos[i] == PROSPECT ? (level > 0 ? int(next() % (det == ST_STAM ? 2 : 3)) : 0) : i == ace ? 5 : std::min(5, need + int(next() % (level + 1)));
+		int extra[3], ne = 0, cand[4], nc = 0;
+		for (int k = 0; k < STAT_N; k++)
+			if (group_of(k) != group_of(det))
+				cand[nc++] = k;
+		while (ne < 3) {   // 다른 계열 세부 넷 중 서로 다른 셋 (씨앗 순)
+			const int k = cand[next() % nc];
+			bool dup = false;
+			for (int j = 0; j < ne; j++)
+				dup = dup || extra[j] == k;
+			if (!dup)
+				extra[ne++] = k;
 		}
-		for (int k = 0; k < GROW_K; k++)
-			bonus[i][k] = st[k];
+		grow_steps(pos[i], det, steps, extra, bonus[i]);
 	}
-	const int gk = next() % 2 ? default_gk(pos, bonus) : int(next() % SQ);
-	set_lineup(s, team, pos, bonus, gk);
-	int sta[SQ];   // 경기 시작 체력: 절반 팀은 가득 · 절반은 선수마다 0 ~ 최대 무작위 (커리어 경기 사이 이어진 체력 — 11-25)
-	const bool tired = next() % 2;
+	int idx[SQ];   // 선발 5명 = 무작위로 섞은 앞 5명 · 키퍼 = 그 가운데 아무나
 	for (int i = 0; i < SQ; i++)
+		idx[i] = i;
+	for (int i = SQ - 1; i > 0; i--)
+		std::swap(idx[i], idx[next() % (i + 1)]);
+	int p5[PER_TEAM], b5[PER_TEAM][GROW_K];
+	for (int i = 0; i < PER_TEAM; i++) {
+		p5[i] = pos[idx[i]];
+		std::memcpy(b5[i], bonus[idx[i]], sizeof(b5[i]));
+	}
+	set_lineup(s, team, p5, b5, int(next() % PER_TEAM));
+	int sta[PER_TEAM];   // 경기 시작 체력: 절반 팀은 가득 · 절반은 선수마다 0 ~ 최대 무작위 (커리어 경기 사이 이어진 체력 — 11-25)
+	const bool tired = next() % 2;
+	for (int i = 0; i < PER_TEAM; i++)
 		sta[i] = tired ? int(next() % (stam_max(s.players[team * PER_TEAM + i]) + 1)) : 99;
 	set_stamina(s, team, sta);
+}
+
+// core/career.gd _form(back_x, front_x) = [[b, 1], [b, 6], [f, 2], [f, 5]] — DEFAULT (1, 3) · PRESS (2, 4) · HOLD (1, 2)
+const Form CAREER_FORMS[3] = { { { { 1, 1 }, { 1, 6 }, { 3, 2 }, { 3, 5 } } }, { { { 2, 1 }, { 2, 6 }, { 4, 2 }, { 4, 5 } } }, { { { 1, 1 }, { 1, 6 }, { 2, 2 }, { 2, 5 } } } };
+
+static bool form_tile_ok(V2 t) { return t.x >= 0 && t.x < W / 2 && t.y >= 0 && t.y < H && !is_any_box(t) && !is_goal(t); }
+
+Form random_form(unsigned long long &r) {
+	Form f;
+	for (int i = 0; i < FIELD_N; i++)
+		for (;;) {
+			const V2 t{ int(xs(r) % (W / 2)), int(xs(r) % H) };
+			bool dup = !form_tile_ok(t);
+			for (int j = 0; j < i; j++)
+				dup = dup || f.t[j] == t;
+			if (!dup) {
+				f.t[i] = t;
+				break;
+			}
+		}
+	return f;
+}
+
+void place_forms(State &s, const Form f[2]) {
+	std::vector<Action> acts;
+	for (int guard = 0; guard < 4 * PLAYERS && s.phase == PLACEMENT; guard++) {
+		const int team = s.turn_team;
+		enumerate_actions(s, acts);
+		if (acts.empty())
+			return;
+		int slot = -1, fi = 0;
+		if (s.redeploy) {   // 다음에 놓을 선수 = 아직 안 놓인 필드 선수 가운데 uid 가 가장 작은 선수 · 대형 칸 = 필드 순번
+			for (int u = team * PER_TEAM, k = 0; u < (team + 1) * PER_TEAM; u++) {
+				const Player &q = s.players[u];
+				if (q.position < 0 || s.gk[team] == u)
+					continue;
+				if (!q.placed()) {
+					slot = q.position == PROSPECT ? SLOT_PROSPECT : pool_slot(q.position);
+					fi = k;
+					break;
+				}
+				k++;
+			}
+		} else {   // 드래프트 판: 놓인 필드 선수 수가 순번
+			for (int u = team * PER_TEAM; u < (team + 1) * PER_TEAM; u++)
+				fi += s.players[u].placed() && s.gk[team] != u;
+		}
+		V2 want = f[team].t[std::min(fi, FIELD_N - 1)];
+		if (team == AWAY)
+			want.x = W - 1 - want.x;
+		int pick = -1;
+		for (size_t i = 0; i < acts.size(); i++)
+			if (acts[i].t == A_PLACE && (slot < 0 || acts[i].uid == slot) && (pick < 0 || acts[i].dest == want)) {
+				pick = int(i);
+				if (acts[i].dest == want && slot >= 0)
+					break;
+			}
+		if (slot < 0) {   // 드래프트: 그 칸에 놓는 수 가운데 무작위 대신 첫 직업 — random_prematch 가 슬롯을 섞는다
+			for (size_t i = 0; i < acts.size(); i++)
+				if (acts[i].dest == want) {
+					pick = int(i);
+					break;
+				}
+		}
+		if (pick < 0 || !apply_action(s, acts[pick]))
+			return;
+	}
+}
+
+void random_prematch(State &s, unsigned long long r) {
+	if (xs(r) % 4 != 0)   // 75 % 무작위 선수단 · 25 % 드래프트 판 (직업도 배치 수로 고름 — 무작위)
+		for (int t = 0; t < 2; t++)
+			random_lineup(s, t, xs(r));
+	Form f[2];
+	for (int t = 0; t < 2; t++)
+		f[t] = xs(r) % 4 == 0 ? CAREER_FORMS[xs(r) % 3] : random_form(r);
+	if (!s.redeploy) {   // 드래프트 판: 배치 수(직업·칸)를 무작위로
+		std::vector<Action> acts;
+		for (int guard = 0; guard < 4 * PLAYERS && s.phase == PLACEMENT; guard++) {
+			enumerate_actions(s, acts);
+			if (acts.empty() || !apply_action(s, acts[xs(r) % acts.size()]))
+				break;
+		}
+		return;
+	}
+	place_forms(s, f);
+}
+
+LineupPick choose_lineup(const State &tmpl, int team, int n, const int pos[], const int bonus[][GROW_K], const int *stam, const Form &opp_form,
+		const std::vector<Form> &forms0, int sampled, unsigned long long seed, const Net &net) {
+	LineupPick best;
+	n = std::max(0, std::min(n, PER_TEAM + 1));
+	if (n < PER_TEAM)
+		return best;
+	std::vector<Form> forms = forms0;
+	unsigned long long r = seed ? seed : 0x9E3779B97F4A7C15ull;
+	for (int i = 0; i < sampled; i++)
+		forms.push_back(random_form(r));
+	if (forms.empty())
+		forms.push_back(CAREER_FORMS[0]);
+	const int opp = opponent(team);
+	for (int skip = n == PER_TEAM ? -1 : 0; skip < (n == PER_TEAM ? 0 : n); skip++) {   // 쉬는 한 명 (6명이면)
+		int st[PER_TEAM], m = 0;
+		for (int i = 0; i < n; i++)
+			if (i != skip)
+				st[m++] = i;
+		for (int gk = 0; gk < PER_TEAM; gk++) {
+			int ord[PER_TEAM], p5[PER_TEAM], b5[PER_TEAM][GROW_K], s5[PER_TEAM];   // 필드 4명(선수단 순) 다음 키퍼
+			for (int i = 0, k = 0; i < PER_TEAM; i++)
+				if (i != gk)
+					ord[k++] = st[i];
+			ord[PER_TEAM - 1] = st[gk];
+			for (int i = 0; i < PER_TEAM; i++) {
+				p5[i] = pos[ord[i]];
+				std::memcpy(b5[i], bonus[ord[i]], sizeof(b5[i]));
+				s5[i] = stam ? stam[ord[i]] : 99;
+			}
+			for (const Form &fm : forms) {
+				float v = 0.0f;
+				for (int first = 0; first < 2; first++) {   // 동전 두 경우 평균
+					State s = tmpl;
+					set_lineup(s, team, p5, b5, PER_TEAM - 1);
+					set_stamina(s, team, s5);
+					s.first_team = s.opener = s.turn_team = first;
+					s.role[first] = R_DEF;
+					s.role[opponent(first)] = R_ATK;
+					Form f2[2];
+					f2[team] = fm, f2[opp] = opp_form;
+					place_forms(s, f2);
+					if (s.phase != PLAY)
+						continue;
+					v += state_value(s, team, &net) * 0.5f;
+					best.evals++;
+				}
+				if (v > best.v) {
+					best.v = v;
+					std::memcpy(best.starters, ord, sizeof(ord));
+					best.form = fm;
+				}
+			}
+		}
+	}
+	return best;
 }
 
 // 길 고르기용 상태 가치 (card.h value_path — 길은 간 뒤의 상태로): team 에 좋을수록 큼 (−1 ~ 1). ctx = const Net *

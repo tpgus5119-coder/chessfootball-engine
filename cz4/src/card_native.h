@@ -23,6 +23,9 @@ public:
 	void new_match(int first);
 	void set_knockout(bool on);   // 단판 토너먼트 — 정규 끝에 비기면 연장 (new_match 뒤에 부른다 · 리그는 안 부름)
 	void set_lineup(int team, PackedInt32Array positions, PackedInt32Array bonus, int gk = -1);   // 선수단 5 · 성장 5×6 (슛·패스·무브·디펜스·피지컬·체력 — 옛 5×4 = 20칸도 받음) · gk = 골키퍼 칸 (−1 = 디펜스 최고)
+	// 경기 전 결정 (망 가치 — 망이 없으면 빈 사전): 선수단 n(≤ 6)명 · 성장 n×7 · 체력 n · 상대 대형 8칸 · 후보 대형 k×8 · 무작위 대형 수
+	// → {starters: 선수단 번호 5 (필드 4 다음 키퍼), form: 8칸 [x, y] × 4, v, evals}. 지금 state(상대 선수단이 정해진 배치 전 판)를 틀로 쓴다
+	Dictionary choose_lineup(int team, PackedInt32Array positions, PackedInt32Array bonus, PackedInt32Array stam, PackedInt32Array opp_form, PackedInt32Array forms, int sampled, int seed);
 	void set_stamina(int team, PackedInt32Array stam);   // 경기 시작 체력 (선수단 5칸 순서 · set_lineup 뒤 · 0~최대로 자름 — 안 부르면 가득)
 	static PackedInt32Array stat_info(int position, PackedInt32Array bonus);   // [피지컬, 체력 최대, 회복(행동 안 한 차례·경기 사이)]
 	void dev_stam(int uid, int stam);   // 개발·시험용 — 남은 체력 놓기

@@ -1,5 +1,7 @@
 name: selfplay4
-# 감독 모드 4대4 원격 기보 공장 (11-25: 프로세스당 240판 — 작업 시작·묶기 대기 3분 대비 계산 8분으로 늘려 갈래 놀림 줄임) — 20개 작업 × 코어 수 프로세스가 gen3 flat 모드로 자가대전.
+# 감독 모드 4대4 원격 기보 공장 (11-25: 프로세스당 240판) — 실행 하나 = 10개 작업 × 코어 수 프로세스가 gen3 로 자가대전.
+# 11-27 원격 최대: 맥(tools/az/gh.py run_many)이 실행 셋을 늘 띄워 둔다 → 둘이 돌며 무료 동시 작업 한도 20 을 채우고 하나는 대기(빈자리에 바로 들어감).
+# 망 판 10 (상대 좌표 · flat 또는 ResNet — gen3 가 머리표로 가린다). 챔피언이 아직 옛 판(못 읽음)이면 손평가 탐색(flat:-)으로 돈다.
 # 규칙 = cz4/src (맥 게임 저장소 gdext/src 와 같은 파일). 망 = release "champion4" 의 champion4.bin (flat 2048/512).
 # 기보 묶음 이름에 규칙 지문(cz4/src 10개 파일의 sha256 앞 10자)을 붙인다 — 맥(tools/az/gh.py sync4)은 지금 규칙과 지문이 같은 묶음만 받는다(옛 규칙 기보가 섞이지 않게).
 on:
@@ -26,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        k: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        k: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     steps:
       - uses: actions/checkout@v4
       - name: build
@@ -44,8 +46,11 @@ jobs:
           CF_MODE: "card"
         run: |
           N=$(nproc)
+          NET=flat:champion4.bin
+          ./gen3 --eval champion4.bin /dev/null 0 || NET=flat:-   # 옛 판 망 = 못 읽음 → 손평가 탐색
+          echo "NET=$NET"
           for i in $(seq 0 $((N-1))); do
-            ./gen3 "rec_${{ matrix.k }}_$i.bin" "${{ github.event.inputs.games }}" "${{ github.event.inputs.sims }}" "${{ github.event.inputs.fast }}" "${{ github.event.inputs.frac }}" "$(( ${{ github.run_number }} * 10000 + ${{ matrix.k }} * 100 + i + 9000000 ))" flat:champion4.bin flat:champion4.bin 0 2> "log_${{ matrix.k }}_$i.txt" &
+            ./gen3 "rec_${{ matrix.k }}_$i.bin" "${{ github.event.inputs.games }}" "${{ github.event.inputs.sims }}" "${{ github.event.inputs.fast }}" "${{ github.event.inputs.frac }}" "$(( ${{ github.run_number }} * 10000 + ${{ matrix.k }} * 100 + i + 9000000 ))" $NET $NET 0 2> "log_${{ matrix.k }}_$i.txt" &
           done
           wait
           tail -n 1 log_*.txt
