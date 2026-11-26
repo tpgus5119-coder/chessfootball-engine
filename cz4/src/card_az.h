@@ -23,14 +23,14 @@ constexpr int OFF_UNPLACED = OFF_BALL + 2 * NF;        // 안 놓인 선수: rel
 constexpr int OFF_BENCH = OFF_UNPLACED + 2 * NPOS;     // 드래프트에 남은 직업: rel·POOL_N + slot
 constexpr int OFF_MARKED = OFF_BENCH + 2 * POOL_N;     // 마커에게 붙은 선수
 constexpr int OFF_PSTAT = OFF_MARKED + 2 * NF;         // 성장: (rel·6 + 스탯)·NF + 칸 (스탯마다 +1 한 번 — 슛·패스·무브·디펜스·피지컬·체력)
-constexpr int OFF_CHARGE = OFF_PSTAT + 2 * GROW_K * NF;     // 「강하게」 모은 선수 (두는 팀만 — 모으기는 그 차례 안에서만)
-constexpr int OFF_ZONE = OFF_CHARGE + NF;              // 태세 존 칸: rel·NF + 칸
+constexpr int OFF_TAI = OFF_PSTAT + 2 * GROW_K * NF;   // 태세 건 선수: rel·NF + 칸 (11-26 묶음 7 — 옛 「강하게」 칸 NF)
+constexpr int OFF_ZONE = OFF_TAI + 2 * NF;              // 태세 존 칸: rel·NF + 칸
 constexpr int OFF_ACTED = OFF_ZONE + 2 * NF;           // 이번 차례에 행동한 두는 팀 선수: me·NF + 칸
 constexpr int OFF_GK = OFF_ACTED + PER_TEAM * NF;      // 골대 밖에 나온 골키퍼: rel·NF + 칸
 constexpr int OFF_STAM = OFF_GK + 2 * NF;             // 남은 체력: (rel·4 + min(체력, 3))·NF + 칸 (11-25)
 constexpr int SPARSE = OFF_STAM + 2 * 4 * NF;
-static_assert(NF == 80 && NPL == 40 && SPARSE == 5166, "입력 칸 수 (판 9 · 11-26 직업 11) — tools/az/train.py CF_MODE=card 와 같게");
-constexpr int DENSE = 27;   // 숫자 입력 (card_az.cpp net_input d[0]~d[26] — 11-26 버티기 씀 칸 더해 27)
+static_assert(NF == 80 && NPL == 40 && SPARSE == 5246, "입력 칸 수 (판 9 · 11-26 묶음 7 태세 칸) — tools/az/train.py CF_MODE=card 와 같게");
+constexpr int DENSE = 26;   // 숫자 입력 (card_az.cpp net_input d[0]~d[25] — 11-26 묶음 7 버티기 씀 칸 뺌)
 constexpr int MAX_ACTIVE = 128;   // 판 9 — 체력·성장 칸이 늘어 96 → 128
 
 struct NetInput {
@@ -45,11 +45,10 @@ constexpr int OFF_TILE = 0;                                   // 이동·드리�
 constexpr int OFF_SHOT = OFF_TILE + 3 * PER_TEAM * NF;        // 슛: me
 constexpr int OFF_STANCE_A = OFF_SHOT + PER_TEAM;             // 제자리 사방 태세: me
 constexpr int OFF_PLACE = OFF_STANCE_A + PER_TEAM;            // 배치: slot·NPL + 자기 진영 칸
-constexpr int OFF_SAVE = OFF_PLACE + (POOL_N + 1) * NPL;      // 공 없는 선수 「강하게」 모으기: 자기 칸
-constexpr int OFF_KEEP = OFF_SAVE + NF;                       // 키퍼 롱킥: 받는 me·NF + 칸
+constexpr int OFF_KEEP = OFF_PLACE + (POOL_N + 1) * NPL;      // 가상 키퍼 롱킥: 받는 me·NF + 칸 (11-26 묶음 7 「강하게」 칸 뺌)
 constexpr int OFF_GKIN = OFF_KEEP + PER_TEAM * NF;            // 골키퍼가 골대로 돌아감
 constexpr int NA = OFF_GKIN + 1;
-static_assert(NA == 2171, "수 칸 수 (판 9 — 직업 11, 11-26) — tools/az/train.py CF_MODE=card 와 같게");
+static_assert(NA == 2091, "수 칸 수 (판 9 — 11-26 묶음 7 「강하게」 뺌) — tools/az/train.py CF_MODE=card 와 같게");
 int action_index(const State &s, const Action &a);
 
 // ---------- 망 (입력 → h1 → h2 → 가치·보조·정책 머리) ----------
@@ -105,7 +104,7 @@ struct Rec {
 	float z, q, aux;
 	uint32_t game;
 };
-static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 572, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
+static_assert(sizeof(Rec) == 2 * MAX_ACTIVE + 4 * DENSE + 6 * PI_K + 16 && sizeof(Rec) == 568, "기록 크기는 train.py(CF_MODE=card)와 같아야 한다");
 
 // 컵 경기처럼 정해진 선수단 5명 — 유망주 0~5명 · 나머지 서로 다른 직업 · 성장 카드 · 골키퍼 = 절반은 디펜스 최고, 절반은 아무나 (학습에 섞는다)
 void random_lineup(State &s, int team, unsigned long long r);

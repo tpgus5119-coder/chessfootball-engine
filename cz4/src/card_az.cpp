@@ -63,8 +63,8 @@ void net_input(const State &s, int team, NetInput &in) {
 		add(in, OFF_STAM + (rel * 4 + std::min(3, stam(q))) * NF, f);   // 남은 체력 0·1·2·3+ (골대 안 키퍼는 칸 없음)
 		if (s.gk[q.team] == q.uid)
 			add(in, OFF_GK + rel * NF, f);   // 골대 안이면 f < 0 — 입력 없음 (d[22]·d[23])
-		if (q.charge && rel == 0)   // 「강하게」는 두는 팀 차례 안에서만 — 상대 칸은 늘 0 이라 없다
-			add(in, OFF_CHARGE, f);
+		if (q.tai)   // 태세 (우리 차례 = 다음 행동 +1 · 상대 차례 = 존·버티기)
+			add(in, OFF_TAI + rel * NF, f);
 	}
 	if (s.phase == PLAY && s.turn_team >= 0)   // 두는 팀: 이번 차례에 행동한 선수 칸
 		for (const Player &q : s.players)
@@ -116,7 +116,6 @@ void net_input(const State &s, int team, NetInput &in) {
 	d[23] = s.gk_in(opp);
 	d[24] = float(s.gk_kick[team]) / 6.0f;   // 키퍼 롱킥 힘 — 우리 · 상대
 	d[25] = float(s.gk_kick[opp]) / 6.0f;
-	d[26] = s.hold_used;   // 공 임자가 버티기를 이미 씀 (11-26)
 }
 
 int action_index(const State &s, const Action &a) {
@@ -137,7 +136,7 @@ int action_index(const State &s, const Action &a) {
 		}
 		case A_SHOT:
 			return mine ? OFF_SHOT + me : -1;
-		case A_STANCE:   // 제자리 사방 태세 · 공 임자 = 버티기 (같은 칸 — 한 선수는 둘 중 하나만 · 11-25)
+		case A_STANCE:   // 태세 = 제자리 (누구나 — 11-26 묶음 7)
 			return mine && a.dest == s.players[a.uid].pos ? OFF_STANCE_A + me : -1;
 		case A_PLACE: {
 			if (a.uid < 0 || a.uid > POOL_N || !in_bounds(a.dest))
@@ -150,10 +149,6 @@ int action_index(const State &s, const Action &a) {
 			if (!mine || f < 0)
 				return -1;
 			return OFF_KEEP + me * NF + f;
-		}
-		case A_SAVE: {   // 「강하게」 모으기 — 자기 칸 (누구나 · 11-25)
-			const int f = ftile(a.dest, team);
-			return f < 0 ? -1 : OFF_SAVE + f;
 		}
 		default:
 			return -1;

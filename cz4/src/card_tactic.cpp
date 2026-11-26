@@ -195,7 +195,7 @@ float holder(const State &s, const Sit &x, const float *S, int tac, const Player
 		if (me.f & R_CARRY)
 			b += 0.3f * std::max(0, gain);
 		return b;
-	case A_SAVE:   // 공 임자 「강하게」 모으기 (14) — 슛 지대(깊이 6+)에서 더 (11-25 공 임자 제자리 A_STANCE = 버티기 — 덤 없음)
+	case A_STANCE:   // 공 임자 태세 (14 — 다음 행동 +1) — 슛 지대(깊이 6+)에서 더 (11-26 묶음 7)
 		return (S[STRONG] - 5) * (depth(x.team, p.pos) >= 6 ? 0.35f : 0.2f);
 	default:
 		return 0.0f;   // 슛은 보이면 쏜다 — 탐색 값이 정한다 (이기는 쪽 슛은 대본이 가로채지 않음)
@@ -236,7 +236,6 @@ float defend(const State &s, const Sit &x, const float *S, int tac, const Player
 	const Role &me = role_of(tac, p);
 	const int dd = depth(x.team, a.dest);
 	const int closer = manhattan(p.pos, x.ball) - manhattan(a.dest, x.ball);
-	const bool adj = manhattan(p.pos, x.ball) <= 1;
 	const int rk = rank_of(x.near, x.nn, p.uid);
 	// 9 달려드는 인원 = 0·1·2명 (막 뺏긴 차례엔 +1 — 역압박) · 10 태클 세기
 	const int n = int(S[PRESS]) + (x.lost_now && S[PRESS] >= 1 ? 1 : 0);   // 0·1·2명
@@ -245,10 +244,8 @@ float defend(const State &s, const Sit &x, const float *S, int tac, const Player
 		const float tk = std::max(2.0f, S[TACKLE]);   // 하 = 따라만 감 (그래도 달려드는 선수는 공 쪽으로)
 		if (a.t == A_MOVE)
 			return 0.25f * tk * std::max(-2, std::min(3, closer));
-		if (a.t == A_STANCE)
-			return adj ? 0.3f * S[TACKLE] + 0.5f : 0.0f;   // 붙어서 태클
-		if (a.t == A_SAVE)
-			return adj ? (S[STRONG] - 5) * 0.3f : 0.0f;   // 14 「강하게」 — 공 임자 곁이면 센 태클
+		if (a.t == A_STANCE)   // 태세 = 이어서 다가가 태클 (+1) · 14 세기
+			return manhattan(p.pos, x.ball) <= 3 ? 0.3f * S[TACKLE] + 0.5f + (S[STRONG] - 5) * 0.3f : 0.0f;
 		return 0.0f;
 	}
 	// 자리 지키는 선수: 11 라인 + 역할 자리 · 12 마크(사람이면 위험한 상대 곁, 지역이면 자리)
@@ -265,8 +262,6 @@ float defend(const State &s, const Sit &x, const float *S, int tac, const Player
 			b -= (S[ZONE] - 5) * 0.1f;   // 13 존 세우기 상 = 공으로 끌려가지 않음 (내려앉아 기다리면 상대가 들어온다)
 		return b;
 	}
-	if (a.t == A_SAVE)   // 14 「강하게」 모으기 (이어서 센 존)
-		return (S[STRONG] - 5) * 0.2f;
 	if (a.t == A_STANCE)   // 13 존 세우기 — 높을수록 제자리에서 존을 세워 인터셉트
 		return zone_gap(depth(x.team, p.pos), lo, hi) == 0 ? 0.08f * S[ZONE] : 0.0f;
 	return 0.0f;

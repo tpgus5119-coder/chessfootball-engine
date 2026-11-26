@@ -2,9 +2,9 @@
 // 감독·선수 모드 규칙 엔진 (docs/spec.md 맨 위 「최근 변경」 · docs/현재_게임.md). 규칙은 이 파일과 card.cpp 가 전부다.
 // 게임 화면(CardNative 바인딩)과 자가학습(card_az · tools/cz)이 같은 코드를 쓴다 — 규칙이 두 벌이면 언젠가 어긋난다.
 //
-// 요약: 수 = 선수 고르기 → 행동(이동·드리블·패스·슛·태세·「강하게」·키퍼 롱킥) → 칸. 차례마다 포인트 2 · 차례 끝 수 없음(포인트를 다 쓴다).
+// 요약: 수 = 선수 고르기 → 행동(이동·드리블·패스·슛·태세·키퍼 롱킥) → 칸. 차례마다 포인트 2 · 차례 끝 수 없음(포인트를 다 쓴다).
 // 스탯 = 디펜스 3 · 무브 4 · 패스 5 · 슛 5 + 성장(그 스탯 힘 +1 — 멀리형 자기 분야만 범위 +1) + 전직 혜택. 힘 = 능력치 + 1 − 거리 · 범위 = 능력치.
-// 경합(존·태클·슛 대 골대 체력)은 거는 쪽 힘 > 당하는 쪽 힘일 때만 이긴다 (동점 = 당하는 쪽).
+// 경합(존·태클·슛 대 골대 체력)은 동점이면 공 쪽이 이긴다 (11-26 묶음 7 — ball_wins).
 #include "engine.h"
 
 #include <cstdint>
@@ -20,7 +20,7 @@ constexpr int CARD_POOL_N = 11;       // 직업 11 (11-26 타워 없앰)
 
 constexpr int BASE_KICK = 5, BASE_DEF = 3, BASE_MOVE = 4;   // 패스·슛 5 · 디펜스 3 · 무브(이동·드리블) 4
 constexpr int MOVE_RANGE = BASE_MOVE;
-// 규칙 묶음 6 (11-25): 피지컬(버티기·스크린·밀기·마커 잡기) · 체력(행동마다 1 · 「강하게」 2 · 0 = 행동 불가) 둘 다 기본 3
+// 규칙 묶음 6 (11-25): 피지컬(버티기·스크린·밀기·마커 잡기) · 체력(행동마다 1 · 태세도 1 · 0 = 행동 불가) 둘 다 기본 3
 constexpr int BASE_PHYS = 3, BASE_STAM = 3;
 constexpr int KICK_RANGE = BASE_KICK;   // 5칸 패스 = 롱패스(공중볼, LONG_PASS_MIN)
 // 골키퍼 = 판 위 선수 한 명: 골대 칸에서 시작 · 그 선수 디펜스 = 골대 체력 · 패스 힘·범위 = 롱킥 (keeper_stats).
@@ -28,9 +28,10 @@ constexpr int KICK_RANGE = BASE_KICK;   // 5칸 패스 = 롱패스(공중볼, LO
 constexpr int GK_DEF0 = BASE_DEF, GK_KICK0 = BASE_KICK, GK_RANGE0 = KICK_RANGE;
 
 // 수 종류 — 번호는 화면(ui/card_match.gd)·망 수 번호와 같다. 7 은 빈 번호(옛 차례 끝)
-// A_KEEP = 키퍼 롱킥 (uid = 받는 아군 · dest = 그 칸) · A_SAVE = 「강하게」 모으기 (dest = 자기 칸 · 누구나 — 11-25)
-// A_STANCE = 공 없는 선수 태세 · 공 임자 = 버티기 (버티는 힘 = 피지컬 — 11-25)
-enum Act { A_MOVE = 0, A_DRIBBLE, A_PASS, A_SHOT, A_STANCE, A_PLACE, A_KEEP, A_SAVE = 8 };
+// A_KEEP = 가상 키퍼(판에 키퍼 없는 시험판) 롱킥 (uid = 받는 아군 · dest = 그 칸) · 8 = 빈 번호(옛 「강하게」)
+// A_STANCE = 태세 (누구나 · 제자리 · 포인트 1 · 체력 1 — 11-26 묶음 7): 우리 차례 다음 행동 힘·범위 +1 · 안 쓰고 차례가 넘어가면
+// 상대 차례 동안 공 없음 = 사방 존(디펜스) · 공 임자 = 버티기(피지컬)
+enum Act { A_MOVE = 0, A_DRIBBLE, A_PASS, A_SHOT, A_STANCE, A_PLACE, A_KEEP };
 
 struct Player {
 	V2 pos = UNPLACED;
@@ -40,8 +41,9 @@ struct Player {
 	int team = HOME;
 	int stance = 0;        // 수비 태세의 힘 — 0 = 태세 없음
 	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 — 월은 상시 태세라 셈하지 않음 · wall_sync)
-	int acted = 0;         // 이번 차례에 행동함 (망 입력) — 「강하게」 모으기는 안 셈
-	int charge = 0;        // 「강하게」: 2 = 이번 차례 다음 행동 1번이 힘·범위 +1 — 쓰거나 공을 잃거나 차례가 끝나면 0
+	int acted = 0;         // 이번 차례에 행동함 (망 입력) — 태세는 안 셈
+	int tai = 0;           // 태세: 1 = 우리 차례 안(다음 행동 힘·범위 +1) · 2 = 상대 차례 동안 선 태세(존·버티기) · 0 = 없음
+	int st_ord = 0;        // 태세를 건 순서 (State.st_seq — 존 겹침: 힘 → 먼저 건 선수 · 월 = 늘 맨 먼저)
 	int bonus[6] = { 0, 0, 0, 0, 0, 0 };   // 성장 — 슛·패스·무브·디펜스·피지컬·체력 (StatKind)
 	int fat = 0;           // 쓴 체력 (남은 체력 = stam_max − fat · 0 = 가득) — 경기 시작 체력은 set_stamina
 	int spent = 0;         // 이번 차례에 체력을 썼다 — 안 썼으면 차례 끝에 회복 (rest_gain)
@@ -63,13 +65,13 @@ struct State {
 	int half_order[PLAYERS] = {};
 	int opener = HOME;
 	int goals[2] = { 0, 0 };
-	int keeper = -1;                    // 슛을 막은 키퍼가 공을 쥔 팀 (−1 = 없음) — 그 팀 다음 수 = 키퍼 롱킥(아군 발밑)
+	int keeper = -1;                    // 슛을 막은 키퍼가 공을 쥔 팀 (−1 = 없음) — 키퍼가 공을 놓을 때까지 그 팀은 키퍼만(패스·드리블) · 가상 키퍼 = 롱킥
 	int gk[2] = { -1, -1 };             // 골키퍼 uid · −1 = 판에 없음(가상 키퍼 — 시험판)
 	int ghp[2] = { 0, 0 };              // 골대 남은 체력 (슛 남은 힘 > 체력이면 골 · 킥오프마다 다시 참 · 키퍼가 골대 밖이면 0 으로 셈)
 	int gk_def[2] = { GK_DEF0, GK_DEF0 }, gk_kick[2] = { GK_KICK0, GK_KICK0 }, gk_range[2] = { GK_RANGE0, GK_RANGE0 };   // 골키퍼 디펜스(= 골대 체력)·롱킥 힘·롱킥 범위
 	int role[2] = { R_DEF, R_ATK };
 	int hold = 0;                          // 공 임자가 태클을 버티는 힘 (공을 다룬 그 행동의 남은 힘 · 태클에 깎임)
-	int hold_used = 0;                     // 1 = 이번 공 임자가 버티기를 썼다 (공 임자가 바뀌면 0 — 11-26 한 번만)
+	int st_seq = 0;                        // 태세 순서 셈 (Player.st_ord)
 	int touch_team = -1, touch_mask = 0;   // 이번 공격에서 공을 만진 아군 (uid 비트) — 가담
 	int poss_turn = 0;                     // 공 임자 팀이 바뀐 때의 turn_count (전술 대본만 — 규칙엔 안 쓴다)
 	Player players[PLAYERS];
@@ -103,8 +105,7 @@ int phys(const Player &p);       // 피지컬 = 3 + 성장 + 타이탄·마커 +
 int stam_max(const Player &p);   // 체력 최대 = 3 + 성장 + 엔진 +1
 int stam(const Player &p);       // 남은 체력
 int rest_gain(int position);     // 경기 사이 회복 = 1 (엔진 2) — 경기 안 「행동 안 한 차례 끝」 회복은 누구나 REST_TURN
-// 경기 안 체력 (행동마다 −1 · 쉬면 +1 · 0 = 못 움직임 · 「강하게」 = 포인트 1 · 체력 2) — 사용자 보류(11-25 압박 측정 뒤 결정).
-// false = 옛 규칙 그대로(체력은 줄지 않음 · 「강하게」 = 포인트 2). 켜려면 true 한 줄 (시험은 둘 다 맞게 나뉨)
+// 경기 안 체력 (행동·태세마다 −1 · 쉬면 +1 · 0 = 못 움직임). false = 체력은 줄지 않음
 constexpr bool MATCH_STAMINA = true;
 constexpr int REST_TURN = 1;     // 경기 안: 그 차례에 체력을 안 쓴 선수 회복 (사용자 11-25 수정 — 엔진도 같음)
 // 스크린 판정 방식 (사용자 고민 중 — 여기 한 줄만 바꾸면 된다): 0 옛 규칙(아군이 서 있기만) · 1 태세만 요구 · 2 태세 + 피지컬 > 그 칸 수비수 (지금)
@@ -138,7 +139,7 @@ constexpr int SLOT_PROSPECT = CARD_POOL_N;
 // 선수단 5명 (gk = 골키퍼 칸 0~4 · −1 = 디펜스가 가장 높은 선수 — 같으면 뒤 선수, core/career.gd keeper_auto 와 같다). 골키퍼는 골대 칸에 놓인다
 void set_lineup(State &s, int team, const int position[PER_TEAM], const int bonus[PER_TEAM][6], int gk = -1);
 // 성장: 스탯마다 +1 한 번 (부르는 쪽이 카드를 센다). k = 슛 · 패스 · 무브 · 디펜스 — 특수 성장 칸 없음 (규칙 묶음 5) · core/career.gd grow_ok 와 같다
-constexpr int GROW_MAX = 1, GROW_K = 6;   // 11-25 피지컬·체력 더해 여섯
+constexpr int GROW_MAX = 1, GROW_K = 6, GROW_PICKS = 4;   // 스탯 여섯 중 넷만 +1 (11-26 묶음 7 — 만랩 = 전직 1 + 4 = 5)
 bool grow_ok(int pos, const int st[GROW_K], int k);
 enum StatKind { ST_SHOT = 0, ST_PASS = 1, ST_DRIBBLE = 2, ST_DEF = 3, ST_PHYS = 4, ST_STAM = 5 };
 // 그 선수가 키퍼일 때 값: out = [디펜스(= 골대 체력) · 롱킥 힘(패스 1칸 힘) · 롱킥 범위(패스 범위)] — 성장·전직 혜택 포함

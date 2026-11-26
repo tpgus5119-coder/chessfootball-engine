@@ -177,7 +177,8 @@ Dictionary CardNative::get_state() const {
 		q["uid"] = p.uid;
 		q["team"] = p.team;
 		q["position"] = p.position;
-		q["charge"] = p.charge;   // 「강하게」 모음 2
+		q["tai"] = p.tai;   // 태세 1 = 우리 차례 (다음 행동 +1) · 2 = 상대 차례 동안 선 태세
+		q["st_ord"] = p.st_ord;
 		q["bonus"] = Array::make(p.bonus[0], p.bonus[1], p.bonus[2], p.bonus[3], p.bonus[4], p.bonus[5]);   // 성장 슛·패스·무브·디펜스·피지컬·체력
 		q["phys"] = ck::phys(p);   // 피지컬 (11-25)
 		q["stam"] = ck::stam(p);   // 남은 체력
@@ -419,7 +420,7 @@ void CardNative::dev_set(int uid, int x, int y, int stance) {
 	s.players[uid].stance = stance;
 	s.players[uid].stance_left = stance > 0 ? 1 : 0;
 	s.players[uid].acted = 0;   // 앞 국면의 「행동함」·「강하게」도
-	s.players[uid].charge = 0;
+	s.players[uid].tai = 0;
 }
 
 void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
@@ -429,7 +430,7 @@ void CardNative::dev_ball(int owner, int x, int y, int turn_team) {
 	s.pts = cf::POINTS_PER_TURN;
 	(void)x, (void)y;   // 옛 루즈볼 칸 자리 (화면 호환 — 안 씀)
 	s.ball_owner = owner;
-	s.hold_used = 0;
+	s.keeper = -1;   // 판을 새로 짜면 키퍼가 쥔 공도 비운다
 	const int bt = s.ball_team();
 	for (int t = 0; t < 2; t++)
 		s.role[t] = t == bt ? ck::R_ATK : ck::R_DEF;
