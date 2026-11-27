@@ -17,8 +17,8 @@ constexpr int NPOS = POOL_N + 1;                       // 직업 12 + 신입생 
 constexpr int NF = NT - 2 * 2 * (GOAL_N + 2);           // 80 — 박스 2×4 둘 밖
 constexpr int NPL = (W / 2) * H - 2 * (GOAL_N + 2);     // 40 — 자기 진영(x 0~5) 박스 밖
 constexpr int OFF_PIECE = 0;                           // (rel·NPOS + slot)·NF + 칸
-constexpr int OFF_STANCE = OFF_PIECE + 2 * NPOS * NF;  // (rel·3 + 힘 2·3·4+)·NF + 칸 (태세 힘은 디펜스 3 − 마커 1 = 2 아래로 안 내려간다)
-constexpr int OFF_BALL = OFF_STANCE + 2 * 3 * NF;      // 공 임자: rel·NF + 칸
+constexpr int OFF_STANCE = OFF_PIECE + 2 * NPOS * NF;  // (rel·4 + 존 힘 1·2·3·4+)·NF + 칸 (스크린이 깎으면 1·2 도 — 11-27 묶음 14)
+constexpr int OFF_BALL = OFF_STANCE + 2 * 4 * NF;      // 공 임자: rel·NF + 칸
 constexpr int OFF_UNPLACED = OFF_BALL + 2 * NF;        // 안 놓인 선수: rel·NPOS + slot
 constexpr int OFF_BENCH = OFF_UNPLACED + 2 * NPOS;     // 드래프트에 남은 직업: rel·POOL_N + slot
 constexpr int OFF_MARKED = OFF_BENCH + 2 * POOL_N;     // 마커에게 붙은 선수
@@ -28,8 +28,10 @@ constexpr int OFF_ZONE = OFF_TAI + 2 * NF;              // 태세 존 칸: rel·
 constexpr int OFF_ACTED = OFF_ZONE + 2 * NF;           // 이번 차례에 행동한 두는 팀 선수: me·NF + 칸
 constexpr int OFF_GK = OFF_ACTED + PER_TEAM * NF;      // 골대 밖에 나온 골키퍼: rel·NF + 칸
 constexpr int OFF_STAM = OFF_GK + 2 * NF;             // 남은 체력: (rel·4 + min(체력, 3))·NF + 칸 (11-25)
-constexpr int SPARSE = OFF_STAM + 2 * 4 * NF;
-static_assert(NF == 80 && NPL == 40 && SPARSE == 5570, "입력 칸 수 (판 9 · 11-26 묶음 8 직업 12 · 성장 일곱 칸) — tools/az/train.py CF_MODE=card 와 같게");
+constexpr int OFF_SLEFT = OFF_STAM + 2 * 4 * NF;       // 태세 남은 지속(stance_left): (rel·3 + 1·2·3+)·NF + 칸 (월 — 11-27 묶음 14)
+constexpr int OFF_SCUT = OFF_SLEFT + 2 * 3 * NF;       // 이번 차례 도착 스크린에 깎인 존(scut > 0): rel·NF + 칸 (차례 끝에 돌아옴)
+constexpr int SPARSE = OFF_SCUT + 2 * NF;
+static_assert(NF == 80 && NPL == 40 && SPARSE == 6370, "입력 칸 수 (판 9 · 11-27 묶음 14 태세 힘 넷 · 지속 · 스크린) — tools/az/train.py CF_MODE=card 와 같게");
 constexpr int DENSE = 26;   // 숫자 입력 (card_az.cpp net_input d[0]~d[25] — 11-26 묶음 7 버티기 씀 칸 뺌)
 constexpr int MAX_ACTIVE = 128;   // 판 9 — 체력·성장 칸이 늘어 96 → 128
 

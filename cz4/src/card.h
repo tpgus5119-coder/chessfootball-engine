@@ -120,7 +120,7 @@ void set_stamina(State &s, int team, const int st[PER_TEAM]);   // 경기 시작
 
 // 화면 연출용 기록 (nullptr이면 조용하다 — 탐색 중에는 끈다)
 struct Event {
-	int kind;   // 0 경합 · 1 밀림 · 2 골 · 4 길(이동·드리블·패스·슛·롱킥) · 5 도착 스크린 · 9 키퍼가 막음
+	int kind;   // 0 경합 · 1 밀림 · 2 골 · 4 길(이동·드리블·패스·슛·롱킥) · 5 도착 스크린 · 6 피지컬 경합(타이탄 밀기·마커 잡기 — a 이긴 쪽 · b 진 쪽 · va·vb 피지컬) · 9 키퍼가 막음
 	int a, b;
 	V2 at;
 	int va, vb, win;

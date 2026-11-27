@@ -52,7 +52,9 @@ void net_input(const State &s, int team, NetInput &in) {
 		const int f = ftile(q.pos, team);
 		add(in, OFF_PIECE + (rel * NPOS + sl) * NF, f);
 		if (q.stance > 0)
-			add(in, OFF_STANCE + (rel * 3 + std::max(0, std::min(2, q.stance - 2))) * NF, f);
+			add(in, OFF_STANCE + (rel * 4 + std::min(3, q.stance - 1)) * NF, f);   // 존 힘 1·2·3·4+ (11-27 묶음 14)
+		if (q.scut > 0)
+			add(in, OFF_SCUT + rel * NF, f);
 		if (s.ball_owner == q.uid)
 			add(in, OFF_BALL + rel * NF, f);
 		if (marked(s, q))
@@ -63,8 +65,10 @@ void net_input(const State &s, int team, NetInput &in) {
 		add(in, OFF_STAM + (rel * 4 + (stam(q) >= stam_max(q) ? 3 : std::min(2, stam(q)))) * NF, f);   // 남은 체력 0·1·2+·가득 (조커 판정 — 11-27 묶음 9 · 골대 안 키퍼는 칸 없음)
 		if (s.gk[q.team] == q.uid)
 			add(in, OFF_GK + rel * NF, f);   // 골대 안이면 f < 0 — 입력 없음 (d[22]·d[23])
-		if (q.tai)   // 태세 중 (존·버티기)
+		if (q.tai) {   // 태세 중 (존·버티기) · 남은 지속 1·2·3+ (월 — 11-27 묶음 14)
 			add(in, OFF_TAI + rel * NF, f);
+			add(in, OFF_SLEFT + (rel * 3 + std::max(0, std::min(2, q.stance_left - 1))) * NF, f);
+		}
 	}
 	if (s.phase == PLAY && s.turn_team >= 0)   // 두는 팀: 이번 차례에 행동한 선수 칸
 		for (const Player &q : s.players)
@@ -195,8 +199,8 @@ static const Mirror g_mirror = [] {
 	struct Blk {
 		int off, n;
 	};
-	const Blk tile_blocks[] = { { OFF_PIECE, 2 * NPOS }, { OFF_STANCE, 6 }, { OFF_BALL, 2 }, { OFF_MARKED, 2 }, { OFF_PSTAT, 2 * GROW_K }, { OFF_TAI, 2 },
-		{ OFF_ZONE, 2 }, { OFF_ACTED, PER_TEAM }, { OFF_GK, 2 }, { OFF_STAM, 8 } };
+	const Blk tile_blocks[] = { { OFF_PIECE, 2 * NPOS }, { OFF_STANCE, 8 }, { OFF_BALL, 2 }, { OFF_MARKED, 2 }, { OFF_PSTAT, 2 * GROW_K }, { OFF_TAI, 2 },
+		{ OFF_ZONE, 2 }, { OFF_ACTED, PER_TEAM }, { OFF_GK, 2 }, { OFF_STAM, 8 }, { OFF_SLEFT, 6 }, { OFF_SCUT, 2 } };
 	int pl = 0;
 	for (const Blk &b : tile_blocks)
 		for (int k = 0; k < b.n; k++, pl++)
