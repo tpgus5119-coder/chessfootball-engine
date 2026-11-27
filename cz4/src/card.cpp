@@ -165,7 +165,9 @@ static void set_owner(State &s, int uid) {
 			s.touch_mask = 0;
 			s.poss_turn = s.turn_count;
 		}
-		p.stance = 0, p.tai = 0, p.stance_left = 0;   // 공을 잡으면 태세가 풀린다
+		p.stance = 0, p.scut = 0;   // 공을 잡으면 존은 없다 — 태세(tai)는 그대로 = 버티기 (11-27 묶음 13: 패스를 받아도 안 풀림)
+		if (p.tai)
+			s.hold = phys(p) + joker_bonus(p);
 		s.touch_mask |= 1 << uid;
 	}
 }
@@ -282,7 +284,7 @@ static bool place_tile_ok(const State &s, int team, V2 t) {
 	return is_own_half(team, t) && !player_at(s, t) && !is_goal(t) && !is_any_box(t);
 }
 
-static void release(Player &p) { p.tai = 0, p.stance = 0, p.stance_left = 0; }
+static void release(Player &p) { p.tai = 0, p.stance = 0, p.stance_left = 0, p.scut = 0; }
 
 static void turn_start(State &s, int team) {   // 우리 차례 시작: 우리 태세가 풀린다 (월 = 지속 단계만큼 더 버팀) · 포인트 2
 	for (Player &p : s.players) {
@@ -460,6 +462,9 @@ void end_turn(State &s) {
 				rep_add(s, p.uid, WALL);
 			s.st_turn[p.uid] = s.tturn[p.team];
 		}
+	for (Player &p : s.players)   // 도착 스크린이 깎은 존은 그 차례 끝까지만 (11-27 묶음 13)
+		if (p.scut)
+			p.stance += p.scut, p.scut = 0;
 	rest(s, s.turn_team);
 	s.turn_count += 1;
 	if (clock(s))
@@ -496,6 +501,9 @@ static void refresh_if_stuck(State &s) {
 static void zone_ball(State &s);
 
 static void after_action(State &s, int actor) {
+	for (Player &q : s.players)   // 마커 잡기 = 피지컬 경합 → 잡힌 선수 태세 풀림 (11-27 묶음 13)
+		if (q.tai && marked(s, q))
+			release(q);
 	zone_ball(s);   // 공이 상대 존 칸에 놓여 있으면 그 수비수와 경합
 	for (Player &q : s.players)   // 이 수의 경합에 든 선수는 태세가 풀린다
 		if (g_met >> q.uid & 1u)
@@ -578,11 +586,8 @@ static int screen_cut(int stance, int &sc) {
 // 길 고르기(path_key)의 미리 셈에서는 풀지 않는다
 static void screen_spent(State &s, V2 tile) {
 	for (Player &q : s.players)
-		if (q.placed() && q.pos == tile) {
-			q.stance = 0;
-			q.stance_left = 0;
-			q.tai = 0;
-		}
+		if (q.placed() && q.pos == tile)
+			release(q);
 }
 
 // 경합: 동점이면 공 쪽이 이긴다 (11-26 묶음 7) — 존(공 힘 ≥ 태세) · 태클(버티는 힘 ≥ 태클 힘이면 지킴) · 슛(남은 힘 ≥ 골대 체력 = 골)
@@ -827,9 +832,7 @@ static void titan_push(State &s, const Player &p) {
 			continue;
 		Player &qm = s.players[q->uid];
 		qm.pos = qm.pos + d;
-		qm.stance = 0;
-		qm.stance_left = 0;
-		qm.tai = 0;
+		release(qm);   // 밀기 = 피지컬 경합 → 밀린 선수 태세 풀림
 		emit({ 1, qm.uid, -1, qm.pos, 0, 0, 0, {} });
 	}
 }
@@ -905,11 +908,36 @@ static bool may_carry(const State &s, const Player &p) {   // 공 임자 · 킥�
 	return s.ball_owner == p.uid || (kickoff_turn(s) && p.team == s.turn_team);
 }
 
-static void pay_point(State &s, int uid) {   // 행동 = 포인트 1 · 체력 1 (부스터 곁이면 체력 없음 — 출발 칸에서 잰다) · 다른 행동을 하면 태세가 풀린다
+static void pay_point(State &s, int uid, bool keep = false) {   // 행동 = 포인트 1 · 체력 1 (부스터 곁이면 체력 없음 — 출발 칸에서 잰다) · 이동 말고 다른 행동을 하면 태세가 풀린다 (keep = 이동)
 	s.pts -= 1;
 	g_joker = s.players[uid].position == JOKER && s.players[uid].fat <= 0 ? uid : -1;   // 조커 판정 = 체력 쓰기 전
 	tire(s, uid);
+	if (!keep)
+		release(s.players[uid]);
+}
+
+// 도착 스크린 (11-27 묶음 13): 공 없는 공격 쪽 태세 선수가 상대 존 칸에 서면 바로 스크린 — 그 칸 존(겹치면 순서대로 · screen_cut)을
+// 스크린 피지컬(조커 가득 +1)만큼 깎아 그 차례 끝까지 둔다 (scut). 스크린 = 경합 → 스크린 선수 태세 풀림. 깎을 존이 없으면 아무 일 없음
+static bool arrive_screen(State &s, int uid) {
+	const Player &p = s.players[uid];
+	if (s.ball_owner < 0 || s.ball_owner == uid || s.players[s.ball_owner].team != p.team)
+		return false;
+	int dl[PER_TEAM];
+	const int nd = zone_list(s, opponent(p.team), p.pos, dl);
+	if (!nd)
+		return false;
+	int sc = screen_power(s, uid), z0 = 0;
+	for (int i = 0; i < nd; i++)
+		z0 += s.players[dl[i]].stance;
+	for (int i = 0; i < nd; i++) {
+		Player &d = s.players[dl[i]];
+		const int dv = screen_cut(d.stance, sc);
+		d.scut += d.stance - dv;
+		d.stance = dv;
+	}
+	emit({ 5, uid, dl[0], p.pos, screen_power(s, uid), z0, 1, {} });   // 사건 5 = 도착 스크린 (a = 스크린 선수 · b = 첫 수비수 · at = 칸 · va = 피지컬 · vb = 깎기 전 존 힘)
 	release(s.players[uid]);
+	return true;
 }
 
 static bool do_move(State &s, int uid, V2 dest) {
@@ -938,13 +966,15 @@ static bool do_move(State &s, int uid, V2 dest) {
 	const int team = p.team;
 	const V2 start = p.pos;
 	emit({ 4, uid, -1, dest, 0, 0, 0, path });
-	// 태세 중인 선수가 움직여 상대 공 임자 곁에 서면 태클 (힘 = 디펜스 · 감쇠 없음) — 태세는 그 뒤 풀린다 (pay_point)
+	// 태세 중인 선수가 움직여도 태세는 그대로 (11-27 묶음 13) — 도착해서 상대 공 임자 곁이면 태클(힘 = 디펜스) · 공 없는 공격 쪽이 상대 존 칸이면 스크린.
+	// 경합을 하면 풀리고(after_action · arrive_screen) 아무 일 없으면 다음 우리 차례 시작까지 그대로
 	const bool was_tai = p.tai != 0;   // 태세를 건 채 움직인 타이탄은 안 민다
-	pay_point(s, uid);
+	pay_point(s, uid, true);
 	s.players[uid].pos = dest;
-	if (was_tai)
-		tackle_if_adjacent(s, uid);
-	else
+	if (was_tai) {
+		if (!tackle_if_adjacent(s, uid))
+			arrive_screen(s, uid);
+	} else
 		titan_push(s, s.players[uid]);   // 태클을 본 뒤 밀기 · 태세였거나 공을 쥐었으면 안 밂
 	if (path.size() >= 3 && (dest.x - start.x) * forward_dir(team) > 0)
 		rep_add(s, uid, SPRINTER);
@@ -1037,7 +1067,7 @@ static bool do_pass(State &s, int uid, V2 dest) {
 	pay_point(s, uid);
 	if (!send_ball(s, p, pow, path)) {
 		set_owner(s, ru);
-		s.hold = pow;   // 받은 선수 버티는 힘 = 그 패스의 남은 힘
+		s.hold = s.players[ru].tai ? phys(s.players[ru]) + joker_bonus(s.players[ru]) : pow;   // 받은 선수 버티는 힘 = 그 패스의 남은 힘 · 태세 중이면 버티기(피지컬 — 11-27 묶음 13)
 	}
 	if (s.ball_team() == team && (dest.x - from.x) * forward_dir(team) > 0)
 		rep_add(s, uid, MAESTRO);
@@ -1136,21 +1166,23 @@ static bool do_keep(State &s, int uid, V2 dest) {
 	emit({ 4, -1, uid, q.pos, pow, 3, 0, { q.pos } });   // 사건 4 · vb 3 = 키퍼 롱킥 (a = −1 · b = 받는 선수 · at = 받는 칸 · va = 힘)
 	s.keeper = -1;
 	set_owner(s, uid);
-	s.hold = pow;
+	s.hold = q.tai ? phys(q) + joker_bonus(q) : pow;   // 태세 중이면 버티기 (11-27 묶음 13)
 	s.pts -= 1;
 	after_action(s, team);
 	return true;
 }
 
-// 태세 (11-26 묶음 8): 누구나 제자리 · 포인트 1 · 체력 1 · 힘·범위 보탬 없음. 이미 태세 · 박스 안 · 골대 안 키퍼 · 킥오프 차례 · 키퍼가 공을 쥔 팀 = 못 함
+// 태세 (11-26 묶음 8): 누구나 제자리 · 포인트 1 · 체력 1 · 힘·범위 보탬 없음. 이미 태세 · 박스 안(골대 안 키퍼 포함) · 키퍼가 공을 쥔 팀 = 못 함 · 킥오프 차례 = 공을 잡고 버티기 (11-27 묶음 13)
 static bool can_stance(const State &s, const Player &p) {
-	return can_act(s, p) && !kickoff_turn(s) && p.tai == 0 && !is_any_box(p.pos) && !in_goal(s, p) && s.keeper != p.team;
+	return can_act(s, p) && p.tai == 0 && !is_any_box(p.pos) && s.keeper != p.team;   // 골대 안 키퍼 = 박스 안 (11-27 묶음 13 — 따로 조건 없음) · 킥오프 차례도 됨 (공을 잡고 선다 = 버티기)
 }
 
 static bool do_stance(State &s, int uid, V2 dest) {
 	Player &p = s.players[uid];
 	if (!can_stance(s, p) || dest != p.pos)
 		return false;
+	if (s.ball_owner == -1)
+		set_owner(s, uid);   // 킥오프 — 이 선수가 공을 잡고 제자리 태세 = 버티기 (11-27 묶음 13 · 공이 판에서 사라지지 않는다)
 	pay_point(s, uid);
 	p.tai = 1;
 	p.st_ord = ++s.st_seq;

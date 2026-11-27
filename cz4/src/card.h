@@ -43,6 +43,7 @@ struct Player {
 	int stance_left = 0;   // 우리 차례가 이만큼 더 시작되면 풀린다 (1 · 월 = 1 + 전문 단계 — 11-26 묶음 8 태세 지속)
 	int acted = 0;         // 이번 차례에 행동함 (망 입력) — 태세는 안 셈
 	int tai = 0;           // 1 = 태세 중 (공 없음 = 존 stance · 공 임자 = 버티기) · 0 = 없음
+	int scut = 0;          // 이번 차례 도착 스크린이 깎은 존 힘 — 차례 끝에 stance 로 돌려준다 (11-27 묶음 13)
 	int st_ord = 0;        // 태세를 건 순서 (State.st_seq — 존 겹침: 먼저 건 선수부터 차례로 · 11-26 묶음 8)
 	int bonus[7] = { 0, 0, 0, 0, 0, 0, 0 };   // 성장 — 슛·패스·무브·디펜스·피지컬·체력 (StatKind) + [6] 2차 성장(전문 효과 둘째 단계) 0·1
 	int fat = 0;           // 쓴 체력 (남은 체력 = stam_max − fat · 0 = 가득) — 경기 시작 체력은 set_stamina
@@ -119,7 +120,7 @@ void set_stamina(State &s, int team, const int st[PER_TEAM]);   // 경기 시작
 
 // 화면 연출용 기록 (nullptr이면 조용하다 — 탐색 중에는 끈다)
 struct Event {
-	int kind;   // 0 경합 · 1 밀림 · 2 골 · 4 길(이동·드리블·패스·슛·롱킥) · 9 키퍼가 막음
+	int kind;   // 0 경합 · 1 밀림 · 2 골 · 4 길(이동·드리블·패스·슛·롱킥) · 5 도착 스크린 · 9 키퍼가 막음
 	int a, b;
 	V2 at;
 	int va, vb, win;
