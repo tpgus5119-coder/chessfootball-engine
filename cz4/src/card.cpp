@@ -393,7 +393,7 @@ void keeper_stats(int position, const int bonus[GROW_K], int out[3]) {
 	p.position = position;
 	for (int k = 0; k < GROW_K; k++)
 		p.bonus[k] = bonus[k];
-	p.fat = 1;   // 골대 체력·가상 키퍼 롱킥은 행동이 아님 — 조커 보탬 없음
+	p.fat = 1;   // 맨 값 (조커 키퍼 보탬은 슛 판정 때 goal_hp 가 그때 체력으로 더함)
 	out[0] = act_power(t, p, U_STANCE);
 	out[1] = act_power(t, p, U_PASS, 1);   // 1칸 힘 = 능력치 (롱킥은 do_keep 이 거리로 깎는다)
 	out[2] = act_range(t, p, C_KICK);
@@ -1059,6 +1059,12 @@ static std::vector<V2> shot_route(const State &s, const Player &p, V2 &goal, int
 	return best;
 }
 
+// 슛을 막는 골대 체력 판정값 = 남은 골대 체력 + 키퍼 조커 보탬 (11-27 묶음 9 — 키퍼도 예외 없음 · 가상 키퍼는 0)
+int goal_hp(const State &s, int team) {
+	const int g = s.gk[team];
+	return s.ghp[team] + (g >= 0 && g < PLAYERS ? joker_bonus(s.players[g]) : 0);
+}
+
 static bool do_shot(State &s, int uid) {
 	const Player &p = s.players[uid];
 	if (!can_act(s, p) || s.ball_owner != uid || keeper_locked(s, p))
@@ -1078,7 +1084,7 @@ static bool do_shot(State &s, int uid) {
 	// 슛 길의 경합을 뚫고 골대에 닿았다 — 남은 힘 ≥ 골대 체력이면 골 · 아니면 남은 힘만큼 체력을 깎고 막힘
 	const int keeper = opponent(team);
 	const bool in = s.gk_in(keeper);   // 키퍼가 골대 밖이면 체력 0 (남은 체력은 그대로 두었다가 돌아오면 다시 씀)
-	const bool scored = ball_wins(pow, in ? s.ghp[keeper] : 0);
+	const bool scored = ball_wins(pow, in ? goal_hp(s, keeper) : 0);   // 조커 키퍼 가득 = 골대 체력 판정 +1 (깎는 건 실제 ghp)
 	if (in)
 		s.ghp[keeper] = std::max(0, s.ghp[keeper] - pow);
 	if (!scored) {   // 막힘 = 키퍼가 공을 쥔다 → 놓을 때까지 그 팀은 키퍼만 (패스·드리블 — 11-26 묶음 7) · 판에 키퍼가 없으면 가상 키퍼 롱킥

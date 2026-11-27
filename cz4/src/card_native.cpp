@@ -196,6 +196,7 @@ Dictionary CardNative::get_state() const {
 	for (int t = 0; t < 2; t++)
 		ghp.push_back(s.ghp[t]);
 	d["ghp"] = ghp;   // 골키퍼 남은 체력 (11-23)
+	d["ghp_eff"] = Array::make(ck::goal_hp(s, 0), ck::goal_hp(s, 1));   // 슛 판정 골대 체력 (조커 키퍼 가득 +1 — 11-27 묶음 9)
 	Array gmax, gkick, grange;
 	for (int t = 0; t < 2; t++) {
 		gmax.push_back(s.gk_def[t]);

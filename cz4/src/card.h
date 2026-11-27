@@ -102,6 +102,7 @@ int act_range(const State &s, const Player &p, int want);                // 범�
 int move_stat(const Player &p);   // 무브 수치 (거리 전)
 
 int joker_bonus(const Player &p);   // 조커(7) 보탬 1·0 — 체력 가득(이 행동 체력을 쓰기 전 기준)일 때 힘·범위 +1 (11-27 묶음 9)
+int goal_hp(const State &s, int team);   // 슛 판정 골대 체력 = 남은 체력 + 키퍼 조커 보탬 (실제로 깎는 건 ghp)
 int phys(const Player &p);       // 피지컬 = 3 + 성장 + 타이탄·마커 2차 성장 +1
 int stam_max(const Player &p);   // 체력 최대 = 3 + 성장
 int spec_lv(const Player &p);    // 전문 직업 단계: 0 신입생 · 1 전직 · 2 같은 효과 한 번 더 (bonus[ST_SPEC])
