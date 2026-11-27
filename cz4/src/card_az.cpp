@@ -60,7 +60,7 @@ void net_input(const State &s, int team, NetInput &in) {
 		for (int k = 0; k < GROW_K; k++)
 			if (q.bonus[k] > 0)
 				add(in, OFF_PSTAT + (rel * GROW_K + k) * NF, f);
-		add(in, OFF_STAM + (rel * 4 + std::min(3, stam(q))) * NF, f);   // 남은 체력 0·1·2·3+ (골대 안 키퍼는 칸 없음)
+		add(in, OFF_STAM + (rel * 4 + (stam(q) >= stam_max(q) ? 3 : std::min(2, stam(q)))) * NF, f);   // 남은 체력 0·1·2+·가득 (조커 판정 — 11-27 묶음 9 · 골대 안 키퍼는 칸 없음)
 		if (s.gk[q.team] == q.uid)
 			add(in, OFF_GK + rel * NF, f);   // 골대 안이면 f < 0 — 입력 없음 (d[22]·d[23])
 		if (q.tai)   // 태세 중 (존·버티기)
@@ -999,7 +999,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 	auto next = [&]() { return xs(r); };
 	// 커리어와 같은 꼴: 직업 12 · 성장 5단계(grow_steps) · 선수단 6명(core/career.gd SQUAD) 중 선발 5명 무작위 · 골키퍼 = 선발 아무나 (11-27)
 	constexpr int JOBS_N = 12;
-	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER, ENGINE, BOOSTER };
+	static const int POOL[JOBS_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER, JOKER, BOOSTER };
 	constexpr int SQ = PER_TEAM + 1;
 	int pos[SQ], bonus[SQ][GROW_K] = {};
 	int used = 0;
@@ -1021,7 +1021,7 @@ void random_lineup(State &s, int team, unsigned long long r) {
 			used |= 1 << k;
 			pos[i] = POOL[k];
 		}
-		// 성장 단계 (11-26 묶음 8): 신입생 0~2 (①② · 체력 세부는 ① 까지) · 전직 선수 = 전직 단계(3 · 엔진·부스터 2) ~ + level · 에이스 = 5 (만랩)
+		// 성장 단계 (11-26 묶음 8): 신입생 0~2 (①② · 체력 세부는 ① 까지) · 전직 선수 = 전직 단계(3 · 조커·부스터 2) ~ + level · 에이스 = 5 (만랩)
 		const int det = family_of(pos[i]) >= 0 ? family_of(pos[i]) : int(next() % STAT_N);
 		const int need = pos[i] == PROSPECT ? 0 : det == ST_STAM ? 2 : 3;
 		const int steps = pos[i] == PROSPECT ? (level > 0 ? int(next() % (det == ST_STAM ? 2 : 3)) : 0) : i == ace ? 5 : std::min(5, need + int(next() % (level + 1)));

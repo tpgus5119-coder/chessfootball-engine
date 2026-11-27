@@ -3,7 +3,7 @@
 // 게임 화면(CardNative 바인딩)과 자가학습(card_az · tools/cz)이 같은 코드를 쓴다 — 규칙이 두 벌이면 언젠가 어긋난다.
 //
 // 요약: 수 = 선수 고르기 → 행동(이동·드리블·패스·슛·태세·키퍼 롱킥) → 칸. 차례마다 포인트 2 · 차례 끝 수 없음(포인트를 다 쓴다).
-// 스탯 = 디펜스 3 · 무브 4 · 패스 5 · 슛 5 · 피지컬 3 · 체력 2 + 성장(스탯 +1) + 전문 직업 효과(숫자 — spec_lv 1·2). 공(킥·드리블) 힘 = 능력치 + 1 − 거리 · 태클·존 = 디펜스 그대로.
+// 스탯 = 디펜스 3 · 무브 4 · 패스 5 · 슛 5 · 피지컬 3 · 체력 3 + 성장(스탯 +1) + 전문 직업 효과(숫자 — spec_lv 1·2). 공(킥·드리블) 힘 = 능력치 + 1 − 거리 · 태클·존 = 디펜스 그대로.
 // 경합(존·태클·슛 대 골대 체력)은 동점이면 공 쪽이 이긴다 (11-26 묶음 7 — ball_wins).
 #include "engine.h"
 
@@ -21,7 +21,7 @@ constexpr int CARD_POOL_N = 12;       // 직업 12 (11-26 묶음 8 부스터)
 constexpr int BASE_KICK = 5, BASE_DEF = 3, BASE_MOVE = 4;   // 패스·슛 5 · 디펜스 3 · 무브(이동·드리블) 4
 constexpr int MOVE_RANGE = BASE_MOVE;
 // 규칙 묶음 6 (11-25): 피지컬(버티기·스크린·밀기·마커 잡기) · 체력(행동마다 1 · 태세도 1 · 0 = 행동 불가) 둘 다 기본 3
-constexpr int BASE_PHYS = 3, BASE_STAM = 2;   // 체력 기본 2 (11-26 묶음 8)
+constexpr int BASE_PHYS = 3, BASE_STAM = 3;   // 체력 기본 3 (11-27 묶음 9 — 묶음 8 의 2 를 되돌림)
 constexpr int KICK_RANGE = BASE_KICK;   // 6칸부터 킥 = 공중볼 (LONG_PASS_MIN — 패스·슛)
 // 골키퍼 = 판 위 선수 한 명: 골대 칸에서 시작 · 그 선수 디펜스 = 골대 체력 · 패스 힘·범위 = 롱킥 (keeper_stats).
 // 판에 키퍼가 없으면(엔진 시험판) 늘 골대 안에 있는 가상 키퍼 = 기본 선수 값
@@ -101,18 +101,19 @@ int act_power(const State &s, const Player &p, int use, int dist = 0);   // 판�
 int act_range(const State &s, const Player &p, int want);                // 범위 — want = C_KICK(패스)·C_SHOT·C_MOVE
 int move_stat(const Player &p);   // 무브 수치 (거리 전)
 
+int joker_bonus(const Player &p);   // 조커(7) 보탬 1·0 — 체력 가득(이 행동 체력을 쓰기 전 기준)일 때 힘·범위 +1 (11-27 묶음 9)
 int phys(const Player &p);       // 피지컬 = 3 + 성장 + 타이탄·마커 2차 성장 +1
-int stam_max(const Player &p);   // 체력 최대 = 2 + 성장
+int stam_max(const Player &p);   // 체력 최대 = 3 + 성장
 int spec_lv(const Player &p);    // 전문 직업 단계: 0 신입생 · 1 전직 · 2 같은 효과 한 번 더 (bonus[ST_SPEC])
-int family_of(int pos);          // 그 직업의 세부 스탯 (StatKind · −1 = 신입생) — 캐논·포처 슛 · 마에스트로·매지션 패스 · 스프린터·트릭스터 무브 · 월·헌터 디펜스 · 타이탄·마커 피지컬 · 엔진·부스터 체력
+int family_of(int pos);          // 그 직업의 세부 스탯 (StatKind · −1 = 신입생) — 캐논·포처 슛 · 마에스트로·매지션 패스 · 스프린터·트릭스터 무브 · 월·헌터 디펜스 · 타이탄·마커 피지컬 · 조커·부스터 체력
 int group_of(int st);            // 세부 스탯의 계열: 0 킥(슛·패스) · 1 무브(무브·체력) · 2 디펜스(디펜스·피지컬)
 int stam(const Player &p);       // 남은 체력
-int rest_gain(int position);     // 경기 사이 회복 = 1 (누구나 — 11-26 묶음 8 엔진 +2 없앰) · 경기 안 「행동 안 한 차례 끝」 회복은 REST_TURN
+int rest_gain(int position);     // 경기 사이 회복 = 1 (누구나) · 경기 안 「행동 안 한 차례 끝」 회복은 REST_TURN
 // 경기 안 체력 (행동·태세마다 −1 · 쉬면 +1 · 0 = 못 움직임). false = 체력은 줄지 않음
 constexpr bool MATCH_STAMINA = true;
-// 엔진·부스터 효과 (11-26 묶음 8 확정): 엔진 = 자기 행동 체력 0 · 부스터 = 행동을 시작할 때 곁(맨해튼 BOOSTER_RANGE) 아군 그 행동 체력 0
+// 조커·부스터 효과: 조커 = 체력 가득일 때 행동 힘·범위 +1 (11-27 묶음 9 · joker_bonus) · 부스터 = 행동을 시작할 때 곁(맨해튼 BOOSTER_RANGE) 아군 그 행동 체력 0
 constexpr int BOOSTER_RANGE = 1;
-constexpr int REST_TURN = 1;     // 경기 안: 그 차례에 체력을 안 쓴 선수 회복 (사용자 11-25 수정 — 엔진도 같음)
+constexpr int REST_TURN = 1;     // 경기 안: 그 차례에 체력을 안 쓴 선수 회복 (사용자 11-25 수정)
 // 스크린 판정 방식 (사용자 고민 중 — 여기 한 줄만 바꾸면 된다): 0 옛 규칙(아군이 서 있기만) · 1 태세만 요구 · 2 태세 + 피지컬 > 그 칸 수비수 (지금)
 constexpr int SCREEN_MODE = 1;
 void set_stamina(State &s, int team, const int st[PER_TEAM]);   // 경기 시작 체력 (선수단 칸 순서 = uid 순서 · 0~최대로 자름)
@@ -145,7 +146,7 @@ constexpr int SLOT_PROSPECT = CARD_POOL_N;
 void set_lineup(State &s, int team, const int position[PER_TEAM], const int bonus[PER_TEAM][7], int gk = -1);   // 7 = GROW_K
 // 성장 5단계 (11-26 묶음 8 · core/career.gd 와 같다): ① 계열(킥·무브·디펜스) → 그 세부 스탯 둘 +1 ② 세부 하나 +1 ③ 그 세부 전문가 전직(효과 1단계)
 // ④ 같은 효과 한 번 더(bonus[ST_SPEC] = 1 · 타이탄·마커 = 피지컬 +1) ⑤ 다른 계열 세부 스탯 하나 +1.
-// 체력 세부 = ② 에서 바로 엔진·부스터 전직 · ③④⑤ = 킥·디펜스 계열 세부 스탯 하나씩 +1. 엔진은 bonus 일곱 칸만 본다
+// 체력 세부 = ② 에서 바로 조커·부스터 전직 · ③④⑤ = 킥·디펜스 계열 세부 스탯 하나씩 +1. 엔진은 bonus 일곱 칸만 본다
 constexpr int GROW_K = 7, STAT_N = 6;
 enum StatKind { ST_SHOT = 0, ST_PASS = 1, ST_DRIBBLE = 2, ST_DEF = 3, ST_PHYS = 4, ST_STAM = 5, ST_SPEC = 6 };
 void grow_steps(int pos, int detail, int steps, const int extra[3], int out[GROW_K]);   // 단계 수(0~5)만큼 키운 bonus — detail = 세부(직업이면 그 세부) · extra = 다른 계열 세부(체력 길 셋 · 그 밖 첫째만) · 신입생은 ①② 까지

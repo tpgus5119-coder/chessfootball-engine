@@ -30,7 +30,7 @@ enum Team { HOME = 0, AWAY = 1 };
 enum Phase { PLACEMENT = 0, PLAY = 1, GAME_OVER = 2 };
 // 직업 번호는 player_state.gd Pos 와 같다. 7 = 엔진(11-25 규칙 묶음 6) · 빈 번호 13 은 옛 직업 자리 · 14 = 부스터(11-26 묶음 8) — 번호를 당기지 않는다 · 9 포처 · 11 매지션 (11-24 규칙 묶음 4)
 enum Pos { PROSPECT = 0, CANNON = 1, TARGETMAN = 2 /* 11-26 없앤 직업 — 번호만 비워 둠 */, TRICKSTER = 3, TITAN = 4, MARKER = 5,
-	HUNTER = 6, ENGINE = 7, WALL = 8, STRIKER = 9, SPRINTER = 10, PLAYMAKER = 11, MAESTRO = 12, BOOSTER = 14 /* 11-26 묶음 8 새 직업 (13 = 옛 링커 자리) */ };
+	HUNTER = 6, JOKER = 7, WALL = 8, STRIKER = 9, SPRINTER = 10, PLAYMAKER = 11, MAESTRO = 12, BOOSTER = 14 /* 11-26 묶음 8 새 직업 (13 = 옛 링커 자리) */ };
 
 inline bool in_bounds(V2 t) { return t.x >= 0 && t.x < W && t.y >= 0 && t.y < H; }
 inline int idx(V2 t) { return t.y * W + t.x; } // in_bounds 전제

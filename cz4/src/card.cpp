@@ -13,7 +13,7 @@ namespace card {
 std::vector<Event> *g_events = nullptr;
 const std::vector<V2> *g_path = nullptr;
 
-static const int DRAFT_POOL[CARD_POOL_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER, ENGINE, BOOSTER };   // 칸 번호 = 망 입력 자리 (엔진·부스터 = 맨 뒤)
+static const int DRAFT_POOL[CARD_POOL_N] = { CANNON, MAESTRO, TRICKSTER, SPRINTER, MARKER, TITAN, HUNTER, WALL, STRIKER, PLAYMAKER, JOKER, BOOSTER };   // 칸 번호 = 망 입력 자리 (조커·부스터 = 맨 뒤)
 
 int pool_slot(int position) {
 	for (int k = 0; k < CARD_POOL_N; k++)
@@ -33,7 +33,7 @@ static void emit(const Event &e) {
 
 // ---------- 전문 직업 효과 (11-26 묶음 8 — 숫자뿐 · 1차 전직 = 1단계 · 2차 성장 = 2단계) ----------
 // 캐논 슛 범위 · 포처 슛 힘 · 마에스트로 패스 범위 · 매지션 패스 힘 · 스프린터 무브 범위 · 트릭스터 무브 힘 · 헌터 디펜스 — 각 +단계
-// 월 태세 지속 +단계 · 타이탄 밀기 · 마커 잡기(곁 적 범위 −1) — 둘 다 2단계 = 피지컬 +1 · 엔진 = 자기 행동 체력 0 · 부스터 = 곁 아군 행동 체력 0
+// 월 태세 지속 +단계 · 타이탄 밀기 · 마커 잡기(곁 적 범위 −1) — 둘 다 2단계 = 피지컬 +1 · 조커 = 체력 가득일 때 행동 힘·범위 +1 · 부스터 = 곁 아군 행동 체력 0
 // 남에게 거는 능력(밀기·잡기·부스터)은 공을 쥐었거나 태세 중이면 꺼진다. 자기 숫자는 늘 켜짐
 int family_of(int pos) {
 	switch (pos) {
@@ -42,7 +42,7 @@ int family_of(int pos) {
 		case SPRINTER: case TRICKSTER: return ST_DRIBBLE;
 		case HUNTER: case WALL: return ST_DEF;
 		case TITAN: case MARKER: return ST_PHYS;
-		case ENGINE: case BOOSTER: return ST_STAM;
+		case JOKER: case BOOSTER: return ST_STAM;
 		default: return -1;
 	}
 }
@@ -60,7 +60,7 @@ void grow_steps(int pos, int detail, int steps, const int extra[3], int out[GROW
 	const int g = group_of(detail);
 	for (int k = 0; k < STAT_N; k++)
 		out[k] += group_of(k) == g;   // ① 계열 세부 둘 +1
-	const bool stam = detail == ST_STAM;   // 체력 길: ② = 엔진·부스터 전직 · ③④⑤ = 다른 계열 세부 +1
+	const bool stam = detail == ST_STAM;   // 체력 길: ② = 조커·부스터 전직 · ③④⑤ = 다른 계열 세부 +1
 	if (!stam && steps >= 2)
 		out[detail] += 1;   // ②
 	if (family_of(pos) < 0)
@@ -131,14 +131,19 @@ static bool boosted(const State &s, const Player &p) {
 	return false;
 }
 
+// 조커 (11-27 묶음 9): 행동을 시작하는 순간(그 행동 체력을 쓰기 전) 체력이 가득이면 그 행동 힘 +1 · 범위 +1 (태세 = 힘만 — 존·버티기·태클).
+// pay_point 가 체력을 쓰기 전에 g_joker 에 적어 두어, 체력을 쓴 뒤 같은 행동 안의 힘(이동 끝 태클·태세 존)도 +1
+static thread_local int g_joker = -1;
+int joker_bonus(const Player &p) { return p.position == JOKER && (p.fat <= 0 || (g_joker >= 0 && g_joker == p.uid)) ? 1 : 0; }
+
 static void tire(State &s, int uid) {
-	if (!MATCH_STAMINA || uid < 0 || uid >= PLAYERS || s.players[uid].position == ENGINE || boosted(s, s.players[uid]))   // 엔진 = 자기 행동 체력 0
+	if (!MATCH_STAMINA || uid < 0 || uid >= PLAYERS || boosted(s, s.players[uid]))
 		return;
 	s.players[uid].fat += 1;
 	s.players[uid].spent = 1;
 }
 
-// 차례 끝 회복: 그 차례에 체력을 안 쓴 선수 +REST_TURN (엔진도 같음 — 엔진 +2 는 경기 사이만) · 최대까지
+// 차례 끝 회복: 그 차례에 체력을 안 쓴 선수 +REST_TURN · 최대까지
 static void rest(State &s, int team) {
 	if (!MATCH_STAMINA)
 		return;
@@ -204,6 +209,7 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 		v = BASE_DEF + p.bonus[ST_DEF] + lv_if(p, HUNTER);
 	else
 		v = move_stat(p);
+	v += joker_bonus(p);   // 조커 (태세 힘 포함)
 	if (kick || use == U_DRIBBLE)
 		v += 1 - std::max(1, dist);
 	return std::max(1, v);
@@ -212,6 +218,7 @@ int act_power(const State &s, const Player &p, int use, int dist) {
 // 범위 = 기본 + 전문 범위(캐논 슛 · 마에스트로 패스 · 스프린터 무브 — 단계만큼) · 마커 곁 −1
 int act_range(const State &s, const Player &p, int want) {
 	int r = want == C_MOVE ? MOVE_RANGE + lv_if(p, SPRINTER) : KICK_RANGE + (want == C_SHOT ? lv_if(p, CANNON) : lv_if(p, MAESTRO));
+	r += joker_bonus(p);   // 조커
 	if (marked(s, p))
 		r -= 1;
 	return std::max(1, r);
@@ -386,6 +393,7 @@ void keeper_stats(int position, const int bonus[GROW_K], int out[3]) {
 	p.position = position;
 	for (int k = 0; k < GROW_K; k++)
 		p.bonus[k] = bonus[k];
+	p.fat = 1;   // 골대 체력·가상 키퍼 롱킥은 행동이 아님 — 조커 보탬 없음
 	out[0] = act_power(t, p, U_STANCE);
 	out[1] = act_power(t, p, U_PASS, 1);   // 1칸 힘 = 능력치 (롱킥은 do_keep 이 거리로 깎는다)
 	out[2] = act_range(t, p, C_KICK);
@@ -891,6 +899,7 @@ static bool may_carry(const State &s, const Player &p) {   // 공 임자 · 킥�
 
 static void pay_point(State &s, int uid) {   // 행동 = 포인트 1 · 체력 1 (부스터 곁이면 체력 없음 — 출발 칸에서 잰다) · 다른 행동을 하면 태세가 풀린다
 	s.pts -= 1;
+	g_joker = s.players[uid].position == JOKER && s.players[uid].fat <= 0 ? uid : -1;   // 조커 판정 = 체력 쓰기 전
 	tire(s, uid);
 	release(s.players[uid]);
 }
@@ -1131,7 +1140,7 @@ static bool do_stance(State &s, int uid, V2 dest) {
 	p.st_ord = ++s.st_seq;
 	p.stance_left = 1 + lv_if(p, WALL);   // 월 = 태세 지속 +단계 (우리 차례 시작을 그만큼 더 버팀)
 	if (s.ball_owner == uid)
-		s.hold = phys(p);   // 공 임자 = 버티기 (버티는 힘 = 피지컬)
+		s.hold = phys(p) + joker_bonus(p);   // 공 임자 = 버티기 (버티는 힘 = 피지컬 · 조커 +1)
 	else {
 		p.stance = act_power(s, p, U_STANCE);   // 공 없음 = 사방 존 (디펜스)
 		tackle_if_adjacent(s, uid);   // 곁에 상대 공 임자 = 바로 태클
@@ -1184,7 +1193,10 @@ bool apply_action(State &s, const Action &a) {
 	const bool u = a.uid >= 0 && a.uid < PLAYERS;
 	const int team = s.turn_team;
 	g_met = 0;
-	if (!apply_one(s, a))
+	g_joker = -1;
+	const bool ok = apply_one(s, a);
+	g_joker = -1;
+	if (!ok)
 		return false;
 	if (u && a.t != A_PLACE && s.players[a.uid].team == team && s.turn_team == team)
 		s.players[a.uid].acted = 1;
