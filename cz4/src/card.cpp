@@ -170,7 +170,7 @@ static void set_owner(State &s, int uid) {
 	}
 }
 
-// 경합(태클·존)으로 공을 뺏었다 — 대표 행동 기록 · 버티는 힘 = 뺏을 때 쓴 경합 힘 (set_owner 바로 뒤에 부른다 · 11-26 묶음 7)
+// 경합(태클·존)으로 공을 뺏었다 — 대표 행동 기록 · 버티는 힘 = 이긴 만큼 = 수비 경합 힘 − 공 힘 (늘 1 이상 · set_owner 바로 뒤에 부른다 · 11-27 묶음 11)
 static void mark_steal(State &s, int val) {
 	rep_add(s, s.ball_owner, HUNTER);
 	s.hold = val;
@@ -857,7 +857,7 @@ static V2 run_zones(State &s, int uid, int &val, const std::vector<V2> &path) {
 			const int dv = screen_cut(s.players[du].stance, sc);
 			if (!zone_contest(s, s.players[uid], val, du, t, dv)) {
 				set_owner(s, du);   // 수비수가 제 칸에서 공을 갖는다
-				mark_steal(s, dv);
+				mark_steal(s, dv - val);
 				return t;
 			}
 			val -= dv;
@@ -877,7 +877,7 @@ static void tackle_do(State &s, int tuid, int tv) {
 	emit({ 0, tuid, h.uid, h.pos, tv, hv, win ? 1 : 0, {} });
 	if (win) {
 		set_owner(s, tuid);
-		mark_steal(s, tv);
+		mark_steal(s, tv - (spent_out(h) ? 0 : hv));   // 체력 0 공 임자 = 공 힘 0 (존과 같게)
 	} else {
 		s.hold = std::max(0, hv - tv);
 		release(s.players[tuid]);
@@ -1177,9 +1177,10 @@ static void zone_ball(State &s) {
 		if (du == -1)
 			return;
 		const int dv = s.players[du].stance;
-		if (!zone_contest(s, h, spent_out(h) ? 0 : s.hold, du, h.pos, dv)) {   // 체력 0 공 임자 = 버티는 힘 0 으로 겨룸 (11-25 — 태클과 같게 늘 뺏김)
+		const int av = spent_out(h) ? 0 : s.hold;
+		if (!zone_contest(s, h, av, du, h.pos, dv)) {   // 체력 0 공 임자 = 버티는 힘 0 으로 겨룸 (11-25 — 태클과 같게 늘 뺏김)
 			set_owner(s, du);
-			mark_steal(s, dv);
+			mark_steal(s, dv - av);
 			continue;   // 뺏은 선수가 다시 상대 존 칸이면 또 겨룸
 		}
 		s.hold -= dv;
