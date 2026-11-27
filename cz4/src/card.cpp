@@ -125,7 +125,7 @@ static bool spent_out(const Player &p) { return MATCH_STAMINA && stam(p) < 1; } 
 // 부스터 (11-26 묶음 8): 행동을 시작할 때 곁(4방향)에 우리 부스터가 있으면 그 행동은 체력 없음 — 부스터가 공을 쥐었거나 태세면 꺼짐
 static bool boosted(const State &s, const Player &p) {
 	for (const Player &b : s.players)
-		if (b.position == BOOSTER && b.team == p.team && b.uid != p.uid && b.placed() && p.placed() && b.tai == 0 && b.stance == 0 && s.ball_owner != b.uid &&
+		if (b.position == BOOSTER && b.team == p.team && b.uid != p.uid && b.placed() && p.placed() &&   // 공·태세와 상관없이 늘 (11-27 묶음 13)
 				manhattan(b.pos, p.pos) <= BOOSTER_RANGE)
 			return true;
 	return false;
@@ -189,11 +189,21 @@ static void sync_roles(State &s) {
 		s.role[t] = t == bt ? R_ATK : R_DEF;
 }
 
+// 피지컬 겨룸 (타이탄 밀기·마커 잡기 — 11-27 묶음 13): 큰 쪽 승 · 동점 = 공 가진 팀 쪽 승
+static bool phys_beats(const State &s, const Player &a, const Player &b) {
+	const int pa = phys(a), pb = phys(b);
+	return pa > pb || (pa == pb && s.ball_team() == a.team);
+}
+
+static bool grabs(const State &s, const Player &m, const Player &p) {   // 마커 m 이 p 를 잡는다 — 공·태세와 상관없이 (11-27 묶음 13)
+	return m.team != p.team && m.position == MARKER && m.placed() && p.placed() && manhattan(m.pos, p.pos) == 1 && phys_beats(s, m, p);
+}
+
 bool marked(const State &s, const Player &p) {   // 상대 마커에 상하좌우로 붙었다 — 범위 −1 (힘 그대로 · 겹치지 않음 · 공 유무와 상관없이) · 마커 피지컬 > 내 피지컬일 때만 (11-25)
 	if (!p.placed())
 		return false;
 	for (const Player &m : s.players)
-		if (m.team != p.team && m.position == MARKER && m.placed() && m.stance == 0 && m.tai == 0 && s.ball_owner != m.uid && manhattan(m.pos, p.pos) == 1 && phys(m) > phys(p))   // 공을 쥐었거나 태세 중인 마커는 못 잡는다 (11-26 묶음 7)
+		if (grabs(s, m, p))
 			return true;
 	return false;
 }
@@ -501,9 +511,11 @@ static void refresh_if_stuck(State &s) {
 static void zone_ball(State &s);
 
 static void after_action(State &s, int actor) {
-	for (Player &q : s.players)   // 마커 잡기 = 피지컬 경합 → 잡힌 선수 태세 풀림 (11-27 묶음 13)
-		if (q.tai && marked(s, q))
-			release(q);
+	for (Player &m : s.players)   // 마커 잡기 = 피지컬 경합 → 잡은 마커·잡힌 선수 모두 태세 풀림 (11-27 묶음 13)
+		if (m.position == MARKER && m.placed())
+			for (Player &q : s.players)
+				if (grabs(s, m, q) && (q.tai || m.tai))
+					release(q), release(m);
 	zone_ball(s);   // 공이 상대 존 칸에 놓여 있으면 그 수비수와 경합
 	for (Player &q : s.players)   // 이 수의 경합에 든 선수는 태세가 풀린다
 		if (g_met >> q.uid & 1u)
@@ -822,19 +834,24 @@ static int origins(const State &s, const Player &p, V2 o[2]) {
 }
 
 // 타이탄 착지 밀기 — 도착 칸 상하좌우의 적 모두를 1칸 바깥으로. 밀린 선수는 태세가 풀린다
-// 공을 안 쥐고 태세도 아닐 때만 (11-26 묶음 7) · 타이탄 피지컬 > 그 적 피지컬일 때만 (동점 = 안 밀림). 밀 칸이 막히면(판 밖·사람·박스·골대 · 키퍼는 상대 진영) 그 적만 그대로
+// 공·태세와 상관없이 (11-27 묶음 13) · 타이탄 피지컬 > 그 적 피지컬(동점 = 공 가진 팀 쪽 승). 밀 칸이 막히면(판 밖·사람·박스·골대 · 키퍼는 상대 진영) 그 적만 그대로.
+// 밀기 = 피지컬 경합 → 민 타이탄·밀린 선수 태세 풀림
 static void titan_push(State &s, const Player &p) {
-	if (p.position != TITAN || p.tai != 0 || p.stance > 0 || s.ball_owner == p.uid)
+	if (p.position != TITAN || !p.placed())
 		return;
+	bool any = false;
 	for (const V2 &d : DIRS) {
 		const Player *q = player_at(s, p.pos + d);
-		if (!q || q->team == p.team || phys(p) <= phys(*q) || !stand_ok(s, *q, q->pos + d))
+		if (!q || q->team == p.team || !phys_beats(s, p, *q) || !stand_ok(s, *q, q->pos + d))
 			continue;
 		Player &qm = s.players[q->uid];
 		qm.pos = qm.pos + d;
-		release(qm);   // 밀기 = 피지컬 경합 → 밀린 선수 태세 풀림
+		release(qm);
+		any = true;
 		emit({ 1, qm.uid, -1, qm.pos, 0, 0, 0, {} });
 	}
+	if (any)
+		release(s.players[p.uid]);
 }
 
 // 공 길(드리블·땅볼 패스·슛 · 공중볼은 떨어지는 칸만)의 존 경합: 칸마다 그 칸 존 수비수와 차례로(겹치면 더해짐 — zone_list) · 수비수마다 한 번.
@@ -968,14 +985,12 @@ static bool do_move(State &s, int uid, V2 dest) {
 	emit({ 4, uid, -1, dest, 0, 0, 0, path });
 	// 태세 중인 선수가 움직여도 태세는 그대로 (11-27 묶음 13) — 도착해서 상대 공 임자 곁이면 태클(힘 = 디펜스) · 공 없는 공격 쪽이 상대 존 칸이면 스크린.
 	// 경합을 하면 풀리고(after_action · arrive_screen) 아무 일 없으면 다음 우리 차례 시작까지 그대로
-	const bool was_tai = p.tai != 0;   // 태세를 건 채 움직인 타이탄은 안 민다
+	const bool was_tai = p.tai != 0;
 	pay_point(s, uid, true);
 	s.players[uid].pos = dest;
-	if (was_tai) {
-		if (!tackle_if_adjacent(s, uid))
-			arrive_screen(s, uid);
-	} else
-		titan_push(s, s.players[uid]);   // 태클을 본 뒤 밀기 · 태세였거나 공을 쥐었으면 안 밂
+	if (was_tai && !tackle_if_adjacent(s, uid))
+		arrive_screen(s, uid);
+	titan_push(s, s.players[uid]);   // 태클·스크린을 본 뒤 밀기 (태세여도 민다 — 11-27 묶음 13)
 	if (path.size() >= 3 && (dest.x - start.x) * forward_dir(team) > 0)
 		rep_add(s, uid, SPRINTER);
 	after_action(s, team);
@@ -1002,7 +1017,7 @@ static bool do_dribble(State &s, int uid, V2 dest) {
 	const V2 cut = run_zones(s, uid, pow, path);
 	const V2 end = cut == UNSET ? path.back() : cut;
 	s.players[uid].pos = end;
-	titan_push(s, s.players[uid]);   // 드리블 뒤 — 공을 뺏겼을 때만 (공 쥔 타이탄은 안 밂)
+	titan_push(s, s.players[uid]);   // 드리블 뒤 (공을 쥐었어도 민다 — 11-27 묶음 13)
 	if (s.ball_owner == uid) {
 		s.hold = pow;   // 드리블 뒤 버티는 힘 = 그 드리블의 남은 힘
 		if ((end.x - from.x) * forward_dir(team) > 0)
@@ -1105,8 +1120,8 @@ int goal_hp(const State &s, int team) {
 
 static bool do_shot(State &s, int uid) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || !may_carry(s, p) || in_goal(s, p) || keeper_locked(s, p))
-		return false;   // 킥오프 차례 첫 수로도 슛 (골대 안 키퍼는 공을 쥔 때처럼 슛 × · 11-27 묶음 12)
+	if (!can_act(s, p) || !may_carry(s, p))
+		return false;   // 키퍼도 보통 공 임자 — 범위 안이면 슛 (11-27 묶음 13 · 골대 안·막은 뒤 슛 × 없앰)   // 킥오프 차례 첫 수로도 슛 (골대 안 키퍼는 공을 쥔 때처럼 슛 × · 11-27 묶음 12)
 	V2 goal = opponent_goal(p.team);
 	int pow = 0;
 	std::vector<V2> path = shot_route(s, p, goal, pow);
@@ -1422,7 +1437,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 				if (manhattan(q.pos, t) >= LONG_PASS_MIN && !g.has(t) && pass_dest_ok(s, q, t))
 					out.push_back({ A_PASS, u, t });
 			}
-			if (!keeper_locked(s, q) && !in_goal(s, q)) {   // carry 안 — 킥오프 첫 수도 (11-27 묶음 12)   // 슛 — 골대 두 칸 가운데 닿는 칸이 있으면 수 하나 (dest = 대표 칸 · 실제 칸은 do_shot 이 고른다)
+			{   // carry 안 — 킥오프 첫 수도 (11-27 묶음 12)   // 슛 — 골대 두 칸 가운데 닿는 칸이 있으면 수 하나 (dest = 대표 칸 · 실제 칸은 do_shot 이 고른다)
 				bool blocked[NT];
 				body_blocked(s, team, blocked);
 				const int sr_n = act_range(s, q, C_SHOT);
