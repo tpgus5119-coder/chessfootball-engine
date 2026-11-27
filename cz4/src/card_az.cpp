@@ -232,9 +232,9 @@ static const Mirror g_mirror = [] {
 }();
 const Mirror &mirror() { return g_mirror; }
 
-bool mirror_exact(const State &s) {
+bool mirror_exact(const State &s) {   // 골대 안 키퍼가 공을 다룸(쥠 · 킥오프 차례 — 11-27 묶음 12) = 대표 칸이 한쪽이라 거울 아님
 	if (s.ball_owner < 0)
-		return true;
+		return !(kickoff_turn(s) && s.gk[s.turn_team] >= 0 && is_goal_of(s.turn_team, s.players[s.gk[s.turn_team]].pos));
 	const Player &o = s.players[s.ball_owner];
 	return !(s.gk[o.team] == o.uid && is_goal_of(o.team, o.pos));
 }

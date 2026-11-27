@@ -901,8 +901,8 @@ static bool can_act(const State &s, const Player &p) {
 	return s.phase == PLAY && p.placed() && p.team == s.turn_team && s.pts >= 1 && !spent_out(p) && !(keeper_locked(s, p) && p.uid != s.ball_owner);   // 한 선수가 여러 번 행동해도 된다 · 체력 0 = 행동 불가
 }
 
-static bool may_carry(const State &s, const Player &p) {   // 공 임자 · 킥오프 차례면 킥오프 팀 누구나
-	return s.ball_owner == p.uid || (kickoff_turn(s) && p.team == s.turn_team && !in_goal(s, p));
+static bool may_carry(const State &s, const Player &p) {   // 공 임자 · 킥오프 차례면 킥오프 팀 누구나 (골대 안 키퍼도 — 공을 쥔 키퍼처럼 · 11-27 묶음 12)
+	return s.ball_owner == p.uid || (kickoff_turn(s) && p.team == s.turn_team);
 }
 
 static void pay_point(State &s, int uid) {   // 행동 = 포인트 1 · 체력 1 (부스터 곁이면 체력 없음 — 출발 칸에서 잰다) · 다른 행동을 하면 태세가 풀린다
@@ -1075,8 +1075,8 @@ int goal_hp(const State &s, int team) {
 
 static bool do_shot(State &s, int uid) {
 	const Player &p = s.players[uid];
-	if (!can_act(s, p) || s.ball_owner != uid || keeper_locked(s, p))
-		return false;
+	if (!can_act(s, p) || !may_carry(s, p) || in_goal(s, p) || keeper_locked(s, p))
+		return false;   // 킥오프 차례 첫 수로도 슛 (골대 안 키퍼는 공을 쥔 때처럼 슛 × · 11-27 묶음 12)
 	V2 goal = opponent_goal(p.team);
 	int pow = 0;
 	std::vector<V2> path = shot_route(s, p, goal, pow);
@@ -1084,6 +1084,8 @@ static bool do_shot(State &s, int uid) {
 		return false;
 	const int team = p.team;
 	emit({ 4, uid, -1, goal, pow, 2, 0, path });
+	if (s.ball_owner == -1)
+		set_owner(s, uid);   // 킥오프 — 이 선수가 공을 갖고 시작한다
 	pay_point(s, uid);
 	if (send_ball(s, p, pow, path)) {
 		after_action(s, team);
@@ -1388,7 +1390,7 @@ void enumerate_actions(const State &s, std::vector<Action> &out) {
 				if (manhattan(q.pos, t) >= LONG_PASS_MIN && !g.has(t) && pass_dest_ok(s, q, t))
 					out.push_back({ A_PASS, u, t });
 			}
-			if (!ko && s.ball_owner == u && !keeper_locked(s, q)) {   // 슛 — 골대 두 칸 가운데 닿는 칸이 있으면 수 하나 (dest = 대표 칸 · 실제 칸은 do_shot 이 고른다)
+			if (!keeper_locked(s, q) && !in_goal(s, q)) {   // carry 안 — 킥오프 첫 수도 (11-27 묶음 12)   // 슛 — 골대 두 칸 가운데 닿는 칸이 있으면 수 하나 (dest = 대표 칸 · 실제 칸은 do_shot 이 고른다)
 				bool blocked[NT];
 				body_blocked(s, team, blocked);
 				const int sr_n = act_range(s, q, C_SHOT);
