@@ -554,17 +554,24 @@ static int zone_list(const State &s, int team, V2 t, int out[PER_TEAM]) {   // �
 	return n;
 }
 
-// 스크린 (11-25): 길 위 아군이 선 칸(끝 칸 제외) — SCREEN_MODE 2 = 그 아군이 태세 중이고 그 칸 존 수비수 du 보다 피지컬이 클 때만 경합 없음
-// (1 = 태세만 · 0 = 옛 규칙 서 있기만). 스크린 판정은 이 함수 하나뿐 (길 고르기 path_key·드리블·패스·슛 모두)
-static bool screened(const State &s, const Player &p, V2 tile, V2 last, int du) {
+// 스크린 (11-27 묶음 10): 길 위 아군이 선 칸(끝 칸 제외) · 그 아군이 태세 중(존이든 우리 차례 태세든)이면 스크린 선수 —
+// 그 칸 존 힘(겹치면 합친 힘)을 스크린 선수 피지컬(조커 가득 +1)만큼 깎고 나머지는 보통 존 경합. 판정은 이 둘뿐 (path_key·run_zones 모두)
+static int screener(const State &s, const Player &p, V2 tile, V2 last) {
 	if (tile == last)
-		return false;
+		return -1;
 	const Player *q = player_at(s, tile);
-	if (!q || q->team != p.team || q->uid == p.uid)
-		return false;
-	if (SCREEN_MODE == 0)
-		return true;
-	return (q->stance > 0 || q->tai != 0) && (SCREEN_MODE == 1 || phys(*q) > phys(s.players[du]));   // 태세 = 존이든 우리 차례 태세든
+	if (!q || q->team != p.team || q->uid == p.uid || !(q->stance > 0 || q->tai != 0))
+		return -1;
+	return q->uid;
+}
+
+static int screen_power(const State &s, int su) { return su < 0 ? 0 : phys(s.players[su]) + joker_bonus(s.players[su]); }
+
+// 깎인 존 힘: 그 칸 수비수 차례대로 스크린 힘을 먼저 써 버린다 (합친 존 힘 − 피지컬 과 같다 · 0 아래로 안 감)
+static int screen_cut(int stance, int &sc) {
+	const int dv = std::max(0, stance - sc);
+	sc = std::max(0, sc - stance);
+	return dv;
 }
 
 // 스크린이 실제로 한 번 막았다 (실행된 드리블·패스·슛 길) → 그 스크린 선수 태세가 풀린다 (11-26 — 태클·존에 진 수비수처럼)
@@ -582,8 +589,7 @@ static void screen_spent(State &s, V2 tile) {
 static inline bool ball_wins(int ball, int def) { return ball >= def; }
 
 // 존 경합: 공 든 쪽이 그 칸의 수비수 태세에 건다 (협동 수비 없음)
-static bool zone_contest(const State &s, const Player &atk, int atk_val, int du, V2 tile) {
-	const int dv = s.players[du].stance;
+static bool zone_contest(const State &s, const Player &atk, int atk_val, int du, V2 tile, int dv) {
 	const bool win = ball_wins(atk_val, dv);
 	emit({ 0, atk.uid, du, tile, atk_val, dv, win ? 1 : 0, {} });
 	return win;
@@ -635,7 +641,7 @@ static void reach(V2 from, int max_steps, const bool *blocked, V2 goal_dest, Rea
 }
 
 // 길의 경합 미리 보기 — 경합이 있는 길은 피하고, 불가피하면 가장 덜 위험한 경합 칸으로.
-// run_zones 와 같은 판정을 상태를 바꾸지 않고 센다: 존 칸 · 수비수마다 한 번(met) · 스크린(끝 칸 제외 아군 칸) ·
+// run_zones 와 같은 판정을 상태를 바꾸지 않고 센다: 존 칸 · 수비수마다 한 번(met) · 스크린(끝 칸 제외 태세 아군 칸 = 존 힘 − 피지컬) ·
 // 이기려면 힘 ≥ 태세(동점은 공 — ball_wins). 지면 거기서 공이 넘어가 끝난다
 struct Foe {
 	const State *s;
@@ -667,14 +673,16 @@ static PathKey path_key(const Foe *f, const std::vector<V2> &p) {
 	for (const V2 &t : p) {
 		int dl[PER_TEAM];
 		const int nd = zone_list(s, opponent(me.team), t, dl);
-		if (!nd || screened(s, me, t, p.back(), dl[0]))
+		if (!nd)
 			continue;
+		int sc = screen_power(s, screener(s, me, t, p.back()));
 		for (int i = 0; i < nd && !k.lose; i++) {
 			const int du = dl[i];
 			if (met[du])
 				continue;
 			met[du] = true;
-			if (!ball_wins(cur, s.players[du].stance)) {   // 동점은 공 (zone_contest)
+			const int dv = screen_cut(s.players[du].stance, sc);
+			if (!ball_wins(cur, dv)) {   // 동점은 공 (zone_contest)
 				k.lose = 1;
 				const int fwd = forward_dir(me.team);
 				for (const Player &q : s.players)
@@ -683,7 +691,7 @@ static PathKey path_key(const Foe *f, const std::vector<V2> &p) {
 				k.near = -goal_dist(me.team, t);   // 우리 골에서 가까울수록 나쁨
 				break;
 			}
-			cur -= s.players[du].stance;   // 이긴 만큼 남음 (겹친 존 = 더해짐)
+			cur -= dv;   // 이긴 만큼 남음 (겹친 존 = 더해짐)
 		}
 		if (k.lose)
 			break;
@@ -827,7 +835,7 @@ static void titan_push(State &s, const Player &p) {
 }
 
 // 공 길(드리블·땅볼 패스·슛 · 공중볼은 떨어지는 칸만)의 존 경합: 칸마다 그 칸 존 수비수와 차례로(겹치면 더해짐 — zone_list) · 수비수마다 한 번.
-// 이기면 이긴 만큼 힘이 남아 다음과 겨룬다(val) · 진 수비수는 태세가 풀린다 · 스크린 칸은 건너뜀(그 스크린 태세 풀림).
+// 이기면 이긴 만큼 힘이 남아 다음과 겨룬다(val) · 진 수비수는 태세가 풀린다 · 스크린 칸은 존 힘을 스크린 피지컬만큼 깎음(그 스크린 태세 풀림).
 // 지면 그 수비수가 공을 갖고 끝 — 뺏긴 칸을 돌려준다 (끝까지 가면 UNSET)
 static V2 run_zones(State &s, int uid, int &val, const std::vector<V2> &path) {
 	bool met[PLAYERS] = {};
@@ -837,17 +845,17 @@ static V2 run_zones(State &s, int uid, int &val, const std::vector<V2> &path) {
 		const int nd = zone_list(s, opp, t, dl);
 		if (!nd)
 			continue;
-		if (screened(s, s.players[uid], t, path.back(), dl[0])) {
-			screen_spent(s, t);
-			continue;
-		}
+		const int su = screener(s, s.players[uid], t, path.back());
+		int sc = screen_power(s, su);
+		if (su >= 0)
+			screen_spent(s, t);   // 스크린을 한 번 쓰면 태세가 풀린다 (힘은 sc 에 먼저 적어 둠)
 		for (int i = 0; i < nd; i++) {
 			const int du = dl[i];
 			if (met[du])
 				continue;
 			met[du] = true;
-			const int dv = s.players[du].stance;
-			if (!zone_contest(s, s.players[uid], val, du, t)) {
+			const int dv = screen_cut(s.players[du].stance, sc);
+			if (!zone_contest(s, s.players[uid], val, du, t, dv)) {
 				set_owner(s, du);   // 수비수가 제 칸에서 공을 갖는다
 				mark_steal(s, dv);
 				return t;
@@ -1169,7 +1177,7 @@ static void zone_ball(State &s) {
 		if (du == -1)
 			return;
 		const int dv = s.players[du].stance;
-		if (!zone_contest(s, h, spent_out(h) ? 0 : s.hold, du, h.pos)) {   // 체력 0 공 임자 = 버티는 힘 0 으로 겨룸 (11-25 — 태클과 같게 늘 뺏김)
+		if (!zone_contest(s, h, spent_out(h) ? 0 : s.hold, du, h.pos, dv)) {   // 체력 0 공 임자 = 버티는 힘 0 으로 겨룸 (11-25 — 태클과 같게 늘 뺏김)
 			set_owner(s, du);
 			mark_steal(s, dv);
 			continue;   // 뺏은 선수가 다시 상대 존 칸이면 또 겨룸

@@ -115,8 +115,6 @@ constexpr bool MATCH_STAMINA = true;
 // 조커·부스터 효과: 조커 = 체력 가득일 때 행동 힘·범위 +1 (11-27 묶음 9 · joker_bonus) · 부스터 = 행동을 시작할 때 곁(맨해튼 BOOSTER_RANGE) 아군 그 행동 체력 0
 constexpr int BOOSTER_RANGE = 1;
 constexpr int REST_TURN = 1;     // 경기 안: 그 차례에 체력을 안 쓴 선수 회복 (사용자 11-25 수정)
-// 스크린 판정 방식 (사용자 고민 중 — 여기 한 줄만 바꾸면 된다): 0 옛 규칙(아군이 서 있기만) · 1 태세만 요구 · 2 태세 + 피지컬 > 그 칸 수비수 (지금)
-constexpr int SCREEN_MODE = 1;
 void set_stamina(State &s, int team, const int st[PER_TEAM]);   // 경기 시작 체력 (선수단 칸 순서 = uid 순서 · 0~최대로 자름)
 
 // 화면 연출용 기록 (nullptr이면 조용하다 — 탐색 중에는 끈다)
